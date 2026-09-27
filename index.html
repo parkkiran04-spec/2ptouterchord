@@ -416,13 +416,13 @@
     { id:1, title:"Cattle Mutilation", desc:"캐틀 뮤틸레이션", url:"cattlemutilation/index.html", bg:"url('cattlemutilation/thumb.webp') center/cover no-repeat, #111",
       panel:"#031927", ink:"#bb1100", body:["캐틀 뮤틸레이션은 소 등 가축이 도륙되어","내부의 피와 내장만 사라진 채 죽은 현상을 일컫는다","외계로의 납치 그리고","육신으로부터의 탈출!"] },
     { id:2, title:"The Sound of Not the Earth", desc:"Voyager Golden Record", url:"e/index.html", bg:"url('e/thumb.webp') center/cover no-repeat, #111",
-      panel:"#0A2430", ink:"#C8341C", body:["보이저 골든 레코드는 보이저 탐사선 두 대에 실린 축음기 음반으로","외계 생명체에게 인류의 메세지를 전달하고자","지구의 모습과 소리를 담은 LP 디스크이다.","언젠가 돌아갈 외계로 단 하나 메세지를 전한다면","어떤 음을 넣을 것인가…"] },
+      panel:"#bc2d0b", ink:"#cfccc2", body:["보이저 골든 레코드는 보이저 탐사선 두 대에 실린 축음기 음반으로","외계 생명체에게 인류의 메세지를 전달하고자","지구의 모습과 소리를 담은 LP 디스크이다.","언젠가 돌아갈 외계로 단 하나 메세지를 전한다면","어떤 음을 넣을 것인가…"] },
     { id:3, title:"Noctiluca",         desc:"Bio-Matrix",       url:"d/index.html",      bg:"linear-gradient(135deg,#0b1e3a,#1fa3a0)",
       panel:"#8E1F17", ink:"#3BA8C4", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
     { id:4, title:"I'm Not an Alien",  desc:"Y2K",              url:"imnota/index.html", bg:"url('imnota/assets/space.webp') center/cover no-repeat, #111",
-      panel:"#12304A", ink:"#BFD9EF", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
+      panel:"#5f9fe6", ink:"#f0f0f0", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
     { id:5, title:"Tenshi no Tsubasa", desc:"천사의 날개",       url:"tenshi/index.html", bg:"url('tenshi/thumb.webp') center/cover no-repeat, #111",
-      panel:"#2A1C4A", ink:"#D4A5FF", body:["외계인들이 손에 쥔 무기는 보통 예술이다","외롭거나 괴로운 자들의 영역…","이것만은 영원히 당신의 편"] },
+      panel:"#0000ff", ink:"#f0f0f0", body:["외계인들이 손에 쥔 무기는 보통 예술이다","외롭거나 괴로운 자들의 영역…","이것만은 영원히 당신의 편"] },
   ];
 
   /* ---------------- DOM setup ---------------- */
@@ -1000,18 +1000,21 @@
         duration: 0.6, ease: 'power3.inOut'
       }, 0.42)
 
-      // 4. the type arrives once there is a field to sit on
+      // 4. the type arrives once there is a field to sit on.
+      //    fromTo, not from: closing runs this timeline backwards and
+      //    leaves the title and arrow at opacity 0, and a plain from()
+      //    would then take that as its end state on the next open.
       .to(detailContent, { opacity: 1, duration: 0.01 }, 0.72)
-      .from(detailTitle, {
-        opacity: 0, y: 28, duration: 0.5, ease: 'power2.out'
+      .fromTo(detailTitle, { opacity: 0, y: 28 }, {
+        opacity: 1, y: 0, duration: 0.5, ease: 'power2.out'
       }, 0.72)
-      .from(bodyLines, {
-        opacity: 0, y: 18, duration: 0.45, ease: 'power2.out', stagger: 0.07
+      .fromTo(bodyLines, { opacity: 0, y: 18 }, {
+        opacity: 1, y: 0, duration: 0.45, ease: 'power2.out', stagger: 0.07
       }, 0.86)
 
       // 5. the arrow arrives last, since it is now the only way onward
-      .from(detailGo, {
-        opacity: 0, duration: 0.4, ease: 'power2.out'
+      .fromTo(detailGo, { opacity: 0 }, {
+        opacity: 1, duration: 0.4, ease: 'power2.out'
       }, 1.05);
   }
 
