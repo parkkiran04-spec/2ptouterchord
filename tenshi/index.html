@@ -1,0 +1,911 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>TENSHI 천사</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+KR:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root { --ink:#2b3030; --paper:#efefef; --acc:#1a1aff; }
+  body.inv { --ink:#d9d6d2; --paper:#121212; --acc:#fff500; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  html, body { width:100%; height:100%; overflow:hidden; background:var(--paper); overscroll-behavior:none; }
+  body { font-family:"IBM Plex Mono", "Noto Sans KR", monospace; -webkit-user-select:none; user-select:none; -webkit-touch-callout:none; }
+  canvas#stage { position:fixed; inset:0; width:100vw; height:100vh; display:block; touch-action:none; cursor:none; }
+  @media (hover:none) { canvas#stage { cursor:auto; } }
+
+  #hint {
+    position:fixed; left:16px; bottom:16px; z-index:5; pointer-events:none;
+    display:flex; flex-direction:column; align-items:flex-start; gap:4px;
+    transition:opacity 1.2s;
+  }
+  #hint span {
+    background:var(--ink); color:var(--paper); font:400 11px/1.5 "Noto Sans KR", monospace;
+    padding:2px 8px; transition:background .4s, color .4s;
+  }
+  #hint span b { font-family:"IBM Plex Mono", monospace; font-weight:500; color:var(--acc); margin-right:6px; transition:color .4s; }
+  #hint.hide { opacity:0; }
+
+  #loader {
+    position:fixed; inset:0; z-index:10; background:#efefef; display:flex; align-items:center; justify-content:center;
+    font:500 12px "IBM Plex Mono", monospace; color:#2b3030; letter-spacing:.2em; transition:opacity .8s;
+  }
+  #loader.done { opacity:0; pointer-events:none; }
+  #loader i { display:inline-block; width:120px; height:6px; background:#d6d6d6; margin-left:12px; position:relative; }
+  #loader i::after { content:""; position:absolute; left:0; top:0; bottom:0; width:var(--p,0%); background:#1a1aff; transition:width .2s; }
+</style>
+</head>
+<body>
+<canvas id="stage"></canvas>
+
+<div id="hint">
+  <span><b>TAP</b>작은 빛 · 위치마다 다른 음</span>
+  <span><b>HOLD 1s</b>큰 스포트라이트</span>
+  <span><b>DRAG</b>빛으로 연주하기</span>
+  <span><b>TENSHI</b>글자 위를 문지르면 흘러내림</span>
+  <span><b>SPACE · HOLD 1.7s</b>세계 뒤집기</span>
+</div>
+
+<div id="loader">TENSHI<i></i></div>
+
+<script>
+(() => {
+'use strict';
+
+/* ───────────── constants ───────────── */
+const IW = 2400, IH = 1350;            // artwork space (resized from 4000x2250)
+const BAND = 390;                       // bottom of the TENSHI word
+const TOP = 140;                        // above this the letters stay rigid
+const CW = 4, NC = IW / CW;             // drip columns
+const PAR = 22;                         // parallax strength (artwork px)
+const HOLD_MS = 1000;
+const FLIP_MS = HOLD_MS + 700;           // spotlight at 1s, world flips 0.7s later
+
+const THEME = {
+  '01': { paper:'#efefef', ink:'#2b3030', acc:'#1a1aff' },
+  '02': { paper:'#121212', ink:'#d9d6d2', acc:'#fff500' },
+};
+
+// bottom → top
+const LAYERS = [
+  { n:'background',     depth:0 },
+  { n:'backgroundstar', depth:.12, fx:'twinkle' },
+  { n:'tenshitext2',    depth:.22, fx:'drip' },
+  { n:'bar',            depth:.30 },
+  { n:'tenshitext1',    depth:.34, fx:'sway' },
+  { n:'bubble',         depth:.55, fx:'wobble' },
+  { n:'tenshicolor2',   depth:.62, fx:'shiver' },
+  { n:'tenshicolor',    depth:.78, fx:'breathe' },
+  { n:'tenshiline',     depth:.86, fx:'boil' },
+  { n:'tenshiline2',    depth:.92, fx:'boil' },
+  { n:'mosaic',         depth:.45, fx:'mosaic' },
+  { n:'sub',            depth:.40 },
+  { n:'textbox',        depth:.18, fx:'textbox' },
+];
+
+/* ───────────── canvas setup ───────────── */
+const cv = document.getElementById('stage');
+const ctx = cv.getContext('2d', { alpha:false });
+const dark = document.createElement('canvas'), dctx = dark.getContext('2d');
+const mask = document.createElement('canvas'), mctx = mask.getContext('2d');
+
+let vw, vh, dpr, W, H, k, ox, oy;
+function fit() {
+  vw = innerWidth; vh = innerHeight;
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  W = Math.round(vw * dpr); H = Math.round(vh * dpr);
+  for (const c of [cv, dark, mask]) { c.width = W; c.height = H; }
+  const cover = vw / vh >= 0.9;
+  const s = cover ? Math.max(vw / IW, vh / IH) : Math.min(vw / IW, vh / IH) * 1.0;
+  k = s * dpr; ox = (W - IW * k) / 2; oy = (H - IH * k) / 2;
+}
+addEventListener('resize', fit); fit();
+
+const toImg = (x, y) => [ (x * dpr - ox) / k, (y * dpr - oy) / k ];
+const minDim = () => Math.min(vw, vh);
+
+/* ───────────── asset loading ───────────── */
+const imgs = {};
+const loader = document.getElementById('loader');
+function loadAll() {
+  const list = [];
+  for (const L of LAYERS) for (const v of ['01', '02']) list.push(L.n + '-' + v);
+  let done = 0;
+  return Promise.all(list.map(key => new Promise(res => {
+    const im = new Image();
+    im.onload = im.onerror = () => { done++; loader.querySelector('i').style.setProperty('--p', (done / list.length * 100) + '%'); res(); };
+    im.src = 'assets/' + key + '.png';
+    imgs[key] = im;
+  })));
+}
+
+/* ───────────── state ───────────── */
+let invert = false;                     // false: 천사-01 is the world, 천사-02 is revealed
+const circles = [];                     // spotlight holes
+const ripples = [];
+const presses = new Map();
+const pointer = { x:-999, y:-999, type:'mouse', inside:false, lastMove:0 };
+const par = { x:0, y:0, tx:0, ty:0 };
+let glitch = 0, T0 = 0, now = 0, flooding = null;
+let textboxFlick = 0;
+window.__tenshi = { circles, presses, get now() { return now; } };   // debug handle
+
+/* ───────────── drip (TENSHI melting) ───────────── */
+const D = new Float32Array(NC), V = new Float32Array(NC), KS = new Float32Array(NC);
+for (let i = 0; i < NC; i++) KS[i] = 0.025 + Math.random() * 0.05;   // viscosity varies per column
+const drips = [];
+function spawnDrip(x, strength = 1) {
+  const thin = Math.random() < .35;
+  drips.push({
+    x, born: now,
+    w: thin ? 5 + Math.random() * 10 : 18 + Math.random() * 55,
+    max: (thin ? 120 + Math.random() * 380 : 60 + Math.random() * 240) * strength,
+    g: 1.2 + Math.random() * 2.2, h: .6 + Math.random() * 2.5, r: 1.4 + Math.random() * 1.6,
+  });
+  if (drips.length > 90) drips.shift();
+}
+const easeOut = t => 1 - Math.pow(1 - t, 3);
+const easeIO = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+function dripAmt(d) {
+  const a = now - d.born;
+  if (a < d.g) return d.max * easeOut(a / d.g);
+  if (a < d.g + d.h) return d.max * (1 + .04 * Math.sin((a - d.g) * 4));
+  if (a < d.g + d.h + d.r) return d.max * (1 - easeIO((a - d.g - d.h) / d.r));
+  return -1;
+}
+function updateDrips(dt) {
+  for (let j = drips.length - 1; j >= 0; j--) {
+    const d = drips[j], a = dripAmt(d);
+    if (a < 0) { drips.splice(j, 1); continue; }
+    d.cur = a;
+  }
+  const A = 18 + 16 * Math.sin(now * .27);
+  const f = Math.min(dt * 60, 3);
+  for (let i = 0; i < NC; i++) {
+    const x = i * CW + CW / 2;
+    let T = A * (.5 + .5 * Math.sin(x * .0041 + now * .6) * Math.sin(x * .0127 - now * .35));
+    for (const d of drips) {
+      const dx = (x - d.x) / d.w;
+      if (dx > -1 && dx < 1) T += d.cur * Math.pow(1 - dx * dx, 1.6);
+    }
+    V[i] += (T - D[i]) * KS[i] * f;
+    V[i] *= Math.pow(.86, f);
+    D[i] += V[i] * f;
+    if (D[i] < -40) D[i] = -40;
+  }
+}
+function drawDrip(c, img) {
+  let run = -1;
+  for (let i = 0; i <= NC; i++) {
+    const d = i < NC ? D[i] : 0;
+    const flat = i < NC && Math.abs(d) < .6;
+    if (flat) { if (run < 0) run = i; continue; }
+    if (run >= 0) { const sx = run * CW, w = (i - run) * CW; c.drawImage(img, sx, 0, w, BAND, sx, 0, w, BAND); run = -1; }
+    if (i < NC) {
+      const sx = i * CW;
+      c.drawImage(img, sx, 0, CW, TOP, sx, 0, CW + .6, TOP);
+      c.drawImage(img, sx, TOP, CW, BAND - TOP, sx, TOP - .5, CW + .6, BAND - TOP + d + .5);
+    }
+  }
+}
+
+/* ───────────── per-layer motion ───────────── */
+let boilSeed = 0, boilT = 0, mosaicOff = [0, 0], mosaicT = 0;
+const rnd = (s) => { const x = Math.sin(s * 127.1) * 43758.5453; return x - Math.floor(x); };
+
+function drawLayer(c, L, v) {
+  const img = imgs[L.n + '-' + v];
+  if (!img || !img.complete || !img.naturalWidth) return;
+  c.save();
+  c.translate(-par.x * L.depth * PAR, -par.y * L.depth * PAR);
+  switch (L.fx) {
+    case 'drip': drawDrip(c, img); c.restore(); return;
+    case 'twinkle':
+      c.globalAlpha = .78 + .22 * Math.sin(now * 1.7);
+      c.drawImage(img, 0, 0, IW, IH);
+      c.globalAlpha = .25 + .25 * Math.sin(now * 2.3 + 1);
+      c.drawImage(img, 1.5, -1.5, IW, IH);
+      break;
+    case 'sway':
+      c.translate(0, Math.sin(now * .5) * 8);
+      c.drawImage(img, 0, 0, IW, IH); break;
+    case 'wobble': {
+      const s = 1 + .008 * Math.sin(now * .8);
+      c.translate(1200, 900); c.rotate(Math.sin(now * .33) * .004); c.scale(s, 1 + .012 * Math.sin(now * .8 + 1));
+      c.translate(-1200, -900 + Math.sin(now * .6) * 6);
+      c.drawImage(img, 0, 0, IW, IH); break;
+    }
+    case 'shiver':
+      c.translate(Math.sin(now * 13) * .8 + (glitch > .2 ? (Math.random() - .5) * 14 * glitch : 0), 0);
+      c.drawImage(img, 0, 0, IW, IH); break;
+    case 'breathe': {
+      const s = 1 + .01 * Math.sin(now * .45);
+      c.translate(1500, 400); c.scale(s, s); c.rotate(Math.sin(now * .3) * .006); c.translate(-1500, -400);
+      c.drawImage(img, 0, 0, IW, IH); break;
+    }
+    case 'boil': {
+      const a = rnd(boilSeed + L.depth * 10) - .5, b = rnd(boilSeed * 1.3 + L.depth) - .5;
+      c.translate(a * 3, b * 3);
+      c.drawImage(img, 0, 0, IW, IH); break;
+    }
+    case 'mosaic':
+      c.translate(mosaicOff[0], mosaicOff[1]);
+      c.drawImage(img, 0, 0, IW, IH); break;
+    case 'textbox': {
+      const p = easeOut(Math.min(1, Math.max(0, (now - 0.6) / 1.8)));
+      c.beginPath(); c.rect(0, 0, 330 + 520 * p, IH); c.clip();
+      if (textboxFlick > 0 && Math.random() < .5) c.translate((Math.random() - .5) * 10, 0);
+      c.drawImage(img, 0, 0, IW, IH); break;
+    }
+    default:
+      c.drawImage(img, 0, 0, IW, IH);
+  }
+  c.restore();
+}
+
+function drawScene(c, v, overlays = true) {
+  const th = THEME[v];
+  c.setTransform(1, 0, 0, 1, 0, 0);
+  c.globalCompositeOperation = 'source-over';
+  c.fillStyle = th.paper; c.fillRect(0, 0, W, H);
+  c.setTransform(k, 0, 0, k, ox, oy);
+  for (const L of LAYERS) drawLayer(c, L, v);
+
+  // ripples only on the base world, so spotlights get no outline
+  if (!overlays) return;
+  c.setTransform(dpr, 0, 0, dpr, 0, 0);
+  c.strokeStyle = th.acc;
+  for (const r of ripples) {
+    const a = (now - r.t0) / r.life;
+    if (a > 1 || a < 0) continue;
+    c.globalAlpha = (1 - a) * .9;
+    c.lineWidth = 2.2 * (1 - a) + .4;
+    c.beginPath(); c.arc(r.x, r.y, r.r0 + r.grow * easeOut(a), 0, Math.PI * 2); c.stroke();
+    c.globalAlpha = (1 - a) * .5;
+    c.beginPath(); c.arc(r.x, r.y, r.r0 + r.grow * .55 * easeOut(a), 0, Math.PI * 2); c.stroke();
+  }
+  c.globalAlpha = 1;
+}
+
+/* ───────────── spotlights ───────────── */
+function addSmall(x, y) {
+  const R = minDim() * (.0125 + Math.random() * .01) + 4;
+  const c = { x, y, r:0, R, born: now, life: 5.5 + Math.random() * 2, type:'small' };
+  circles.push(c);
+  if (circles.length > 60) circles.shift();
+  return c;
+}
+const easeBack = t => { const s = 1.9; t -= 1; return t * t * ((s + 1) * t + s) + 1; };
+function updateCircles(dt) {
+  for (let i = circles.length - 1; i >= 0; i--) {
+    const c = circles[i];
+    if (c.type === 'small') {
+      const a = now - c.born;
+      if (c.charging) {        // swells gently while held, as hold feedback
+        const h = Math.min(1, (performance.now() - c.charging.t0) / HOLD_MS);
+        c.r = c.R * (a < .45 ? easeBack(a / .45) : 1) * (1 + .5 * h * h);
+      }
+      else if (a < .45) c.r = c.R * easeBack(a / .45);
+      else if (a < c.life - .9) c.r = c.R * (1 + .04 * Math.sin(a * 3 + c.R));
+      else if (a < c.life) c.r = c.R * (1 - easeIO((a - (c.life - .9)) / .9));
+      else circles.splice(i, 1);
+    } else if (c.type === 'big') {
+      const target = c.held ? c.R * (1 + .035 * Math.sin(now * 2.2)) : 0;
+      c.r += (target - c.r) * (1 - Math.pow(c.held ? .9 : .93, dt * 60));
+      if (c.follow) { c.x += (c.follow.x - c.x) * (1 - Math.pow(.8, dt * 60)); c.y += (c.follow.y - c.y) * (1 - Math.pow(.8, dt * 60)); }
+      if (!c.held && c.r < 1) circles.splice(i, 1);
+    } else if (c.type === 'flood') {
+      const a = Math.min(1, (now - c.born) / 1.25);
+      c.r = Math.hypot(Math.max(c.x, vw - c.x), Math.max(c.y, vh - c.y)) * easeIO(a) + 2;
+      if (a >= 1) {
+        circles.length = 0; flooding = null;
+        invert = !invert; document.body.classList.toggle('inv', invert);
+        glitch = 1;
+        thud(); droneShift();
+        return;                               // circles were just cleared
+      }
+    }
+  }
+}
+function flood(x = vw / 2, y = vh / 2) {
+  if (flooding) return;
+  flooding = { x, y, r:0, born: now, type:'flood' };
+  circles.push(flooding);
+  sweep(); glitch = .5;
+  memory.rec('flood', { x, y });
+  for (let i = 0; i < 8; i++) spawnDrip(Math.random() * IW, 1.2);
+}
+
+function inSpot(x, y) {
+  for (const c of circles) if (Math.hypot(x - c.x, y - c.y) < c.r) return true;
+  return false;
+}
+function drawCursor() {
+  if (pointer.type === 'touch' || pointer.x < -100) return;
+  const v = inSpot(pointer.x, pointer.y) !== invert ? '02' : '01';
+  const col = THEME[v].acc;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+  const { x, y } = pointer;
+  ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x - 18, y); ctx.lineTo(x - 12, y); ctx.moveTo(x + 12, y); ctx.lineTo(x + 18, y);
+  ctx.moveTo(x, y - 18); ctx.lineTo(x, y - 12); ctx.moveTo(x, y + 12); ctx.lineTo(x, y + 18);
+  ctx.stroke();
+  ctx.fillStyle = col; ctx.fillRect(x - 1, y - 1, 2, 2);
+}
+
+function applyGlitch() {
+  if (glitch < .05) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  const n = Math.floor(glitch * 7);
+  for (let i = 0; i < n; i++) {
+    const h = (4 + Math.random() * 40) * dpr, y = Math.random() * (H - h);
+    const dx = (Math.random() - .5) * 60 * dpr * glitch;
+    ctx.drawImage(cv, 0, y, W, h, dx, y, W, h);
+  }
+}
+
+/* ───────────── audio ───────────── */
+let AC = null, master, bus, muted = false, drone = null;
+function initAudio() {
+  if (AC) { if (AC.state === 'suspended') AC.resume(); return; }
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  AC = new Ctx();
+  const comp = AC.createDynamicsCompressor();
+  comp.threshold.value = -14; comp.ratio.value = 4;
+  comp.connect(AC.destination);
+  master = AC.createGain(); master.gain.value = muted ? 0 : .9; master.connect(comp);
+
+  // reverb (generated impulse)
+  const len = AC.sampleRate * 3.4, buf = AC.createBuffer(2, len, AC.sampleRate);
+  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6); }
+  const verb = AC.createConvolver(); verb.buffer = buf;
+  const vg = AC.createGain(); vg.gain.value = .45; verb.connect(vg); vg.connect(master);
+
+  // ping-pong-ish delay
+  const delay = AC.createDelay(1); delay.delayTime.value = .31;
+  const fb = AC.createGain(); fb.gain.value = .36;
+  const lp = AC.createBiquadFilter(); lp.frequency.value = 2400;
+  delay.connect(lp); lp.connect(fb); fb.connect(delay);
+  const dg = AC.createGain(); dg.gain.value = .28; lp.connect(dg); dg.connect(master);
+
+  bus = AC.createGain(); bus.gain.value = 1;
+  bus.connect(master); bus.connect(verb); bus.connect(delay);
+  startDrone();
+}
+// A major pentatonic, 10 columns × 3 rows (top = higher octave)
+const SCALE = [0, 2, 4, 7, 9];
+function freqAt(x, y) {
+  const col = Math.max(0, Math.min(9, Math.floor(x / vw * 10)));
+  const row = Math.max(0, Math.min(2, Math.floor(y / vh * 3)));
+  const semi = SCALE[col % 5] + 12 * Math.floor(col / 5) + (1 - row) * 12;
+  return 220 * Math.pow(2, semi / 12);
+}
+const panAt = x => Math.max(-1, Math.min(1, x / vw * 2 - 1));
+const live = () => AC && !muted;
+function outNode(p = 0) {
+  const g = AC.createGain();
+  if (AC.createStereoPanner) { const s = AC.createStereoPanner(); s.pan.value = Math.max(-1, Math.min(1, p)); g.connect(s); s.connect(bus); }
+  else g.connect(bus);
+  return g;
+}
+function holdAt(param, t) {
+  if (param.cancelAndHoldAtTime) param.cancelAndHoldAtTime(t);
+  else { const v = param.value; param.cancelScheduledValues(t); param.setValueAtTime(v, t); }
+}
+function noise(sec) {
+  const len = Math.floor(AC.sampleRate * sec), b = AC.createBuffer(1, len, AC.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  const s = AC.createBufferSource(); s.buffer = b; return s;
+}
+
+/* a note that rings as long as the finger stays down:
+   struck bell partials + a sustaining body, released by noteOff */
+function noteOn(f, p = 0, vel = 1) {
+  if (!live()) return null;
+  const t = AC.currentTime, out = outNode(p);
+  for (const [m, a, dec] of [[1, .22, 1.6], [2, .08, .9], [3.01, .05, .6], [4.18, .03, .35], [.5, .05, 1.4]]) {
+    const o = AC.createOscillator(), g = AC.createGain();
+    o.frequency.value = f * m;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(a * vel, t + .005);
+    g.gain.exponentialRampToValueAtTime(.0001, t + dec);
+    o.connect(g); g.connect(out); o.start(t); o.stop(t + dec + .05);
+  }
+  const body = AC.createGain();
+  body.gain.setValueAtTime(0, t);
+  body.gain.linearRampToValueAtTime(.12 * vel, t + .04);
+  body.gain.setTargetAtTime(.05 * vel, t + .3, 2.5);
+  body.connect(out);
+  const o1 = AC.createOscillator(); o1.frequency.value = f;
+  const o2 = AC.createOscillator(); o2.type = 'triangle'; o2.frequency.value = f * 2;
+  const g2 = AC.createGain(); g2.gain.value = .25;
+  const vib = AC.createOscillator(), vd = AC.createGain();       // vibrato blooms the longer it is held
+  vib.frequency.value = 5.2; vd.gain.setValueAtTime(0, t); vd.gain.linearRampToValueAtTime(10, t + 1.5);
+  vib.connect(vd); vd.connect(o1.detune); vd.connect(o2.detune);
+  o1.connect(body); o2.connect(g2); g2.connect(body);
+  const oscs = [o1, o2, vib]; oscs.forEach(o => o.start(t));
+  return { t0: t, body, oscs };
+}
+// release tail grows with how long the note was held
+function noteOff(v, held) {
+  if (!v || !AC) return;
+  const t = AC.currentTime;
+  if (held == null) held = t - v.t0;
+  const rel = Math.min(6, .25 + held * 1.4);
+  holdAt(v.body.gain, t);
+  v.body.gain.setTargetAtTime(0, t, rel / 4);
+  v.oscs.forEach(o => o.stop(t + rel + .2));
+}
+function pluck(f, p, vel, dur) {
+  const v = noteOn(f, p, vel);
+  if (v) setTimeout(() => noteOff(v, dur), dur * 1000);
+}
+function padStart(f) {
+  if (!live()) return null;
+  const t = AC.currentTime;
+  const g = AC.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.16, t + 1.4);
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500; lp.Q.value = 5;
+  lp.connect(g); g.connect(bus);
+  const oscs = [];
+  [1, 1.5, 2, 3, 4].forEach((m, j) => [-7, 7].forEach(dt => {
+    const o = AC.createOscillator(), og = AC.createGain();
+    o.type = j < 2 ? 'sawtooth' : 'triangle'; o.frequency.value = f * m; o.detune.value = dt;
+    og.gain.value = .11 / (j + 1); o.connect(og); og.connect(lp); o.start(t); oscs.push(o);
+  }));
+  const lfo = AC.createOscillator(), lg = AC.createGain();
+  lfo.frequency.value = .35; lg.gain.value = 260; lfo.connect(lg); lg.connect(lp.frequency); lfo.start(t); oscs.push(lfo);
+  return { g, lp, oscs };
+}
+function padMove(p, x, y) {
+  if (!p) return;
+  p.lp.frequency.setTargetAtTime(280 + (1 - y / vh) * 3200, AC.currentTime, .12);
+}
+function padStop(p) {
+  if (!p) return;
+  const t = AC.currentTime;
+  holdAt(p.g.gain, t);
+  p.g.gain.linearRampToValueAtTime(0, t + 1.8);
+  p.oscs.forEach(o => o.stop(t + 1.9));
+}
+// ink drop: TENSHI melting
+function drop(f, vel = 1, p = 0) {
+  if (!live()) return;
+  const t = AC.currentTime, out = outNode(p);
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.frequency.setValueAtTime(f * 2.4, t); o.frequency.exponentialRampToValueAtTime(f * .7, t + .08);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.16 * vel, t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + .22);
+  o.connect(g); g.connect(out); o.start(t); o.stop(t + .25);
+}
+// digital crackle for glitches
+function crackle(amt = 1) {
+  if (!live()) return;
+  const t = AC.currentTime, len = Math.floor(AC.sampleRate * (.08 + .22 * amt));
+  const b = AC.createBuffer(1, len, AC.sampleRate), d = b.getChannelData(0);
+  let v = 0, hold = 0;
+  for (let i = 0; i < len; i++) {
+    if (--hold <= 0) { v = Math.random() < .5 ? 0 : Math.random() * 2 - 1; hold = 20 + Math.floor(Math.random() * 400); }
+    d[i] = v * (1 - i / len);
+  }
+  const s = AC.createBufferSource(); s.buffer = b;
+  const hp = AC.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 600;
+  const g = AC.createGain(); g.gain.value = .12 * amt;
+  s.connect(hp); hp.connect(g); g.connect(master); s.start(t);
+}
+// 8-bit tick when the pixel mosaic jumps
+function tick() {
+  if (!live()) return;
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'square'; o.frequency.value = 1200 + Math.floor(Math.random() * 4) * 500;
+  g.gain.setValueAtTime(.02, t); g.gain.exponentialRampToValueAtTime(.0001, t + .03);
+  o.connect(g); g.connect(outNode(Math.random() * 1.6 - .8)); o.start(t); o.stop(t + .04);
+}
+// faint star glints
+function sparkle() {
+  if (!live()) return;
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.frequency.value = 2500 + Math.random() * 3000;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.014, t + .01); g.gain.exponentialRampToValueAtTime(.0001, t + .7);
+  o.connect(g); g.connect(outNode(Math.random() * 2 - 1)); o.start(t); o.stop(t + .75);
+}
+// spotlight closing
+function whooshDown(vel = 1) {
+  if (!live()) return;
+  const t = AC.currentTime, s = noise(1.3);
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 5;
+  bp.frequency.setValueAtTime(3200, t); bp.frequency.exponentialRampToValueAtTime(180, t + 1.1);
+  const g = AC.createGain(); g.gain.setValueAtTime(.22 * vel, t); g.gain.exponentialRampToValueAtTime(.001, t + 1.25);
+  s.connect(bp); bp.connect(g); g.connect(bus); s.start(t);
+}
+// the world flipping over
+function thud() {
+  if (!live()) return;
+  const t = AC.currentTime, o = AC.createOscillator(), g = AC.createGain();
+  o.frequency.setValueAtTime(90, t); o.frequency.exponentialRampToValueAtTime(38, t + .8);
+  g.gain.setValueAtTime(.4, t); g.gain.exponentialRampToValueAtTime(.001, t + 1.4);
+  o.connect(g); g.connect(master); o.start(t); o.stop(t + 1.5);
+}
+function sweep() {
+  if (!live()) return;
+  const t = AC.currentTime, s = noise(1.6);
+  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 6;
+  bp.frequency.setValueAtTime(180, t); bp.frequency.exponentialRampToValueAtTime(5200, t + 1.25);
+  const g = AC.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.5, t + 1.0); g.gain.exponentialRampToValueAtTime(.001, t + 1.6);
+  s.connect(bp); bp.connect(g); g.connect(bus); s.start(t);
+  setTimeout(() => { pluck(880, 0, .7, .6); pluck(1318.5, .3, .5, .6); pluck(659.25, -.3, .6, .6); }, 1200);
+}
+// quiet room tone under everything; shifts key when the world inverts
+const DRONE = { false: [55, 82.41, 110, 164.81], true: [46.25, 69.3, 92.5, 138.59] };
+function startDrone() {
+  if (drone || !AC) return;
+  const t = AC.currentTime, g = AC.createGain(), lp = AC.createBiquadFilter();
+  lp.type = 'lowpass'; lp.frequency.value = 700;
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(.05, t + 5);
+  lp.connect(g); g.connect(master);
+  const oscs = DRONE[invert].map((f, i) => {
+    const o = AC.createOscillator(), og = AC.createGain();
+    o.type = i % 2 ? 'triangle' : 'sine'; o.frequency.value = f; o.detune.value = (i - 1.5) * 4;
+    og.gain.value = [.5, .3, .25, .12][i]; o.connect(og); og.connect(lp); o.start(t); return o;
+  });
+  drone = { g, oscs };
+}
+function droneShift() {
+  if (!drone) return;
+  DRONE[invert].forEach((f, i) => drone.oscs[i].frequency.setTargetAtTime(f, AC.currentTime, 1.2));
+}
+
+/* ───────────── sound memory ─────────────
+   Every sound a person makes is remembered in localStorage and on the server
+   (memory/sounds.jsonl via serve.ps1) — nothing is shown.
+   Hidden access: window.tenshiMemory  ·  Shift+E export JSON  ·  Shift+R replay the previous visit */
+const memory = (() => {
+  const KEY = 'tenshi.memory.v1', MAX = 30000;
+  const NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const noteName = f => { const m = Math.round(69 + 12 * Math.log2(f / 440)); return NAMES[(m % 12 + 12) % 12] + (Math.floor(m / 12) - 1); };
+  let store = null;
+  try { store = JSON.parse(localStorage.getItem(KEY)); } catch (_) {}
+  if (!store || !Array.isArray(store.sessions)) store = { v: 1, sessions: [] };
+  const past = store.sessions.slice();
+  const session = { id: Date.now().toString(36), start: new Date().toISOString(), screen: [innerWidth, innerHeight], events: [] };
+  const t0 = performance.now();
+  let joined = false, dirty = false;
+  const r3 = v => Math.round(v * 1000) / 1000;
+
+  function trim() {
+    let total = store.sessions.reduce((n, s) => n + s.events.length, 0);
+    while (total > MAX && store.sessions.length > 1) total -= store.sessions.shift().events.length;
+    if (total > MAX) session.events.splice(0, total - MAX);
+  }
+  function rec(type, data = {}) {
+    if (!joined) { store.sessions.push(session); joined = true; }
+    const ev = { t: Math.round(performance.now() - t0), type, ...data };
+    if (ev.f) { ev.f = Math.round(ev.f * 100) / 100; ev.note = noteName(ev.f); }
+    if (ev.x != null) ev.x = r3(ev.x / vw);
+    if (ev.y != null) ev.y = r3(ev.y / vh);
+    session.events.push(ev);
+    if (session.events.length % 500 === 0) trim();
+    dirty = true;
+    // a held note is sent to the server once its length is known (see commit)
+    if (!(type === 'note' && ev.dur == null)) outbox.push(ev);
+    return ev;
+  }
+  function commit(ev) { if (ev && !outbox.includes(ev)) { outbox.push(ev); dirty = true; } }
+  function save() {
+    if (!dirty) return;
+    try { localStorage.setItem(KEY, JSON.stringify(store)); dirty = false; }
+    catch (_) { if (store.sessions.length > 1) { store.sessions.shift(); save(); } }
+  }
+
+  // server copy: POST /memory → memory/sounds.jsonl (see serve.ps1). Fails silently when offline / static-hosted.
+  const outbox = [];
+  const SERVER = 'memory';
+  let sending = false;
+  const payload = evs => JSON.stringify({ session: { id: session.id, start: session.start, screen: session.screen }, events: evs });
+  async function sync() {
+    if (sending || !outbox.length || location.protocol === 'file:') return;
+    sending = true;
+    const batch = outbox.splice(0, 400);
+    try {
+      const r = await fetch(SERVER, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload(batch), keepalive: true });
+      if (!r.ok) throw 0;
+    } catch (_) { outbox.unshift(...batch); }
+    sending = false;
+  }
+  function flush() {
+    save();
+    if (!outbox.length || location.protocol === 'file:' || !navigator.sendBeacon) return;
+    if (navigator.sendBeacon(SERVER, new Blob([payload(outbox)], { type: 'application/json' }))) outbox.length = 0;
+  }
+  setInterval(() => { save(); sync(); }, 3000);
+  addEventListener('pagehide', flush);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flush(); });
+  // everything the server remembers, grouped back into visits
+  async function fromServer() {
+    const text = await (await fetch(SERVER, { cache: 'no-store' })).text();
+    const map = new Map();
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const { data } = JSON.parse(line);
+        if (!map.has(data.session.id)) map.set(data.session.id, { ...data.session, events: [] });
+        map.get(data.session.id).events.push(...data.events);
+      } catch (_) {}
+    }
+    const sessions = [...map.values()];
+    sessions.forEach(s => s.events.sort((a, b) => a.t - b.t));
+    return sessions;
+  }
+
+  // re-perform remembered events through the same instruments
+  let timers = [];
+  function play(ev) {
+    const p = ev.x != null ? ev.x * 2 - 1 : 0;
+    switch (ev.type) {
+      case 'note': {
+        const v = noteOn(ev.f, p, ev.vel ?? 1);
+        let pad = null;
+        if (ev.mode === 'hold') timers.push(setTimeout(() => { pad = padStart(ev.f / 2); crackle(.6); }, HOLD_MS));
+        timers.push(setTimeout(() => { noteOff(v, ev.dur); if (ev.mode === 'hold') { padStop(pad); whooshDown(.7); } }, (ev.dur ?? .15) * 1000));
+        break;
+      }
+      case 'drop': drop(ev.f, ev.vel, p); break;
+      case 'crackle': crackle(ev.amt); break;
+      case 'flood': sweep(); timers.push(setTimeout(thud, 1250)); break;
+    }
+  }
+  function stop() { timers.forEach(clearTimeout); timers = []; }
+  function replay(events) {
+    stop(); initAudio();
+    if (!events || !events.length) return 0;
+    const start = events[0].t;
+    for (const ev of events) timers.push(setTimeout(() => play(ev), ev.t - start));
+    return (events[events.length - 1].t - start) / 1000;
+  }
+  function exportJSON() {
+    save();
+    const blob = new Blob([JSON.stringify(store, null, 1)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'tenshi-memory-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '') + '.json';
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+  const api = {
+    get sessions() { return store.sessions; },
+    get current() { return session; },
+    count: () => store.sessions.reduce((n, s) => n + s.events.length, 0),
+    replay: (i) => replay(i == null ? (past.length ? past[past.length - 1].events : session.events) : (store.sessions[i] || {}).events),
+    replayAll: () => replay(store.sessions.flatMap((s, k) => s.events.map(e => ({ ...e, t: e.t + k * 2000 + store.sessions.slice(0, k).reduce((n, q) => n + (q.events.length ? q.events[q.events.length - 1].t : 0), 0) })))),
+    stop, export: exportJSON,
+    fromServer,
+    replayServer: async (i = -1) => { const s = await fromServer(); const pick = s[i < 0 ? s.length + i : i]; return pick ? replay(pick.events) : 0; },
+    clear: () => { stop(); store.sessions = joined ? [session] : []; session.events.length = 0; past.length = 0; dirty = true; save(); },
+  };
+  window.tenshiMemory = api;
+  return { rec, commit, api };
+})();
+
+/* ───────────── interaction ───────────── */
+const hint = document.getElementById('hint');
+let hintTimer = null;
+function touchHint() {
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => hint.classList.add('hide'), 5000);
+}
+
+function tapAt(x, y, vel = 1) {
+  const c = addSmall(x, y);
+  ripples.push({ x, y, t0: now, life: 1.3, r0: c.R * .6, grow: c.R * 2.2 });
+  if (ripples.length > 40) ripples.shift();
+  const [ix] = toImg(x, y);
+  spawnDrip(ix, .5 + Math.random() * .6);
+  glitch = Math.max(glitch, .35 * vel);
+  textboxFlick = .25;
+  return c;
+}
+
+cv.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  initAudio(); touchHint();
+  try { cv.setPointerCapture(e.pointerId); } catch (_) {}
+  pointer.type = e.pointerType; pointer.x = e.clientX; pointer.y = e.clientY;
+  const p = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t0: performance.now(), mode: 'tap', acc: 0, circle: null, pad: null, lastNote: performance.now() };
+  p.circle = tapAt(p.x, p.y);
+  p.circle.charging = p;
+  const f = freqAt(p.x, p.y);
+  p.voice = noteOn(f, panAt(p.x), 1);                 // rings until the finger lifts
+  p.ev = memory.rec('note', { f, x: p.x, y: p.y, vel: 1, mode: 'tap' });
+  const [ix, iy] = toImg(p.x, p.y);
+  if (iy < BAND) {
+    spawnDrip(ix, 1.6); spawnDrip(ix + (Math.random() - .5) * 60, 1.2);
+    dropAt(p.x, 1);
+  }
+  presses.set(e.pointerId, p);
+});
+
+// finish the press's sounding note; its length is how long it was held
+function endVoice(p) {
+  if (!p.ev || p.ev.dur != null) return;
+  const held = (performance.now() - p.t0) / 1000;
+  p.ev.dur = Math.round(held * 1000) / 1000;
+  memory.commit(p.ev);
+  noteOff(p.voice, held);
+}
+let lastDropSnd = 0;
+function dropAt(x, vel) {
+  if (now - lastDropSnd < .09) return;
+  lastDropSnd = now;
+  const f = freqAt(x, 0) * (Math.random() < .3 ? 2 : 1);
+  drop(f, vel, panAt(x));
+  memory.rec('drop', { f, x, vel: Math.round(vel * 100) / 100 });
+}
+
+let lastHoverDrip = 0;
+cv.addEventListener('pointermove', e => {
+  const x = e.clientX, y = e.clientY;
+  const mdx = x - pointer.x, mdy = y - pointer.y;
+  pointer.x = x; pointer.y = y; pointer.type = e.pointerType; pointer.lastMove = now;
+  par.tx = (x / vw - .5) * 2; par.ty = (y / vh - .5) * 2;
+
+  // rubbing the TENSHI word makes it melt
+  const [ix, iy] = toImg(x, y);
+  const speed = Math.hypot(mdx, mdy);
+  if (iy > -20 && iy < BAND + 40 && speed > 2 && now - lastHoverDrip > .07) {
+    lastHoverDrip = now;
+    spawnDrip(ix, Math.min(1.4, .35 + speed / 40));
+    dropAt(x, Math.min(1, .3 + speed / 60));
+  }
+
+  const p = presses.get(e.pointerId);
+  if (!p) return;
+  const moved = Math.hypot(x - p.x, y - p.y);
+  p.x = x; p.y = y;
+  if (p.mode === 'tap' && Math.hypot(x - p.sx, y - p.sy) > 22) { p.mode = 'paint'; p.circle.charging = null; endVoice(p); }
+  if (p.mode === 'paint') {
+    p.acc += moved;
+    if (p.acc > 64) {
+      // slow drags leave long notes, fast drags short ones
+      const tn = performance.now(), dur = Math.max(.1, Math.min(1.4, (tn - p.lastNote) / 1000 * 1.2));
+      p.acc = 0; p.lastNote = tn;
+      tapAt(x, y, .55);
+      const f = freqAt(x, y);
+      pluck(f, panAt(x), .55, dur);
+      memory.rec('note', { f, x, y, vel: .55, mode: 'drag', dur: Math.round(dur * 1000) / 1000 });
+    }
+  } else if (p.mode === 'big') {
+    padMove(p.pad, x, y);
+  }
+});
+
+function release(e) {
+  const p = presses.get(e.pointerId);
+  if (!p) return;
+  endVoice(p);
+  if (p.mode === 'big' && p.circle) { p.circle.held = false; p.circle.follow = null; padStop(p.pad); whooshDown(); glitch = Math.max(glitch, .4); }
+  if (p.circle && p.circle.charging) { p.circle.charging = null; p.circle.R = p.circle.r; }
+  presses.delete(e.pointerId);
+}
+cv.addEventListener('pointerup', release);
+cv.addEventListener('pointercancel', release);
+cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse') pointer.x = -999; });
+cv.addEventListener('contextmenu', e => e.preventDefault());
+
+function checkHolds() {
+  const t = performance.now();
+  for (const p of presses.values()) {
+    // holding past the spotlight (1.7s total) flips the world, same as SPACE
+    if (p.mode === 'big' && !p.flooded && t - p.t0 >= FLIP_MS) { p.flooded = true; flood(p.x, p.y); }
+    if (p.mode !== 'tap' || t - p.t0 < HOLD_MS) continue;
+    p.mode = 'big';
+    const c = p.circle;
+    c.type = 'big'; c.held = true; c.follow = p; c.charging = null;
+    c.R = minDim() * .085 + 15;
+    p.pad = padStart(freqAt(p.sx, p.sy) / 2);
+    padMove(p.pad, p.x, p.y);
+    if (p.ev) p.ev.mode = 'hold';
+    crackle(.8);
+    ripples.push({ x: p.x, y: p.y, t0: now, life: 1.8, r0: c.r, grow: c.R * 1.4 });
+    glitch = .8;
+    for (let i = 0; i < 5; i++) spawnDrip(Math.random() * IW, 1);
+  }
+}
+
+/* keyboard + buttons */
+function setMute(m) {
+  muted = m;
+  if (master) master.gain.setTargetAtTime(m ? 0 : .9, AC.currentTime, .05);
+}
+function toggleFull() {
+  if (!document.fullscreenElement) document.documentElement.requestFullscreen?.();
+  else document.exitFullscreen?.();
+}
+addEventListener('keydown', e => {
+  if (e.code === 'Space') { e.preventDefault(); initAudio(); flood(pointer.x > 0 ? pointer.x : vw / 2, pointer.x > 0 ? pointer.y : vh / 2); }
+  else if (e.shiftKey && e.code === 'KeyE') memory.api.export();          // hidden: download the sound memory
+  else if (e.shiftKey && e.code === 'KeyR') memory.api.replay();          // hidden: replay the previous visit
+  else if (e.key === 'm' || e.key === 'M') { initAudio(); setMute(!muted); }
+  else if (e.key === 'f' || e.key === 'F') toggleFull();
+  else if (e.key === 'h' || e.key === 'H') hint.classList.toggle('hide');
+});
+
+/* ───────────── loop ───────────── */
+let last = 0, nextAuto = 0, nextSparkle = 3;
+function frame(ts) {
+  try { step(ts); } catch (err) { console.error(err); }
+  requestAnimationFrame(frame);
+}
+window.__tenshi.step = ts => step(ts);
+window.__tenshi.dark = dark; window.__tenshi.mask = mask;
+function step(ts) {
+  if (!W || !H) { if (innerWidth && innerHeight) fit(); return; }
+  const t = ts / 1000;
+  const dt = Math.min(.05, last ? t - last : .016);
+  last = t; now = t - T0;
+
+  // idle motion
+  if (pointer.type === 'touch' || now - pointer.lastMove > 4) {
+    par.tx = Math.sin(now * .21) * .5; par.ty = Math.cos(now * .17) * .4;
+  }
+  par.x += (par.tx - par.x) * (1 - Math.pow(.94, dt * 60));
+  par.y += (par.ty - par.y) * (1 - Math.pow(.94, dt * 60));
+  boilT += dt; if (boilT > .09) { boilT = 0; boilSeed++; }
+  mosaicT += dt;
+  if (mosaicT > .14) {
+    mosaicT = 0;
+    const prev = mosaicOff[0] + ',' + mosaicOff[1];
+    if (Math.random() < .18 + glitch * .6) mosaicOff = [(Math.floor(Math.random() * 3) - 1) * 22, (Math.random() < .3 ? (Math.floor(Math.random() * 3) - 1) * 22 : 0)];
+    else if (Math.random() < .4) mosaicOff = [0, 0];
+    if (mosaicOff[0] + ',' + mosaicOff[1] !== prev) tick();
+  }
+  if (now > nextAuto) {
+    const ax = Math.random() * IW;
+    spawnDrip(ax, .5 + Math.random() * .7);
+    if (Math.random() < .3) drop(freqAt((ax * k + ox) / dpr, 0), .22, (ax / IW) * 2 - 1);   // ambient, not remembered
+    nextAuto = now + .35 + Math.random() * 1.1;
+  }
+  if (now > nextSparkle) { sparkle(); nextSparkle = now + 2 + Math.random() * 5; }
+  glitch *= Math.pow(.9, dt * 60);
+  textboxFlick = Math.max(0, textboxFlick - dt);
+  for (let i = ripples.length - 1; i >= 0; i--) if (now - ripples[i].t0 > ripples[i].life) ripples.splice(i, 1);
+
+  checkHolds();
+  updateDrips(dt);
+  updateCircles(dt);
+
+  const base = invert ? '02' : '01', rev = invert ? '01' : '02';
+  drawScene(ctx, base);
+
+  if (circles.length) {
+    drawScene(dctx, rev, false);
+    mctx.setTransform(1, 0, 0, 1, 0, 0);
+    mctx.clearRect(0, 0, W, H);
+    mctx.fillStyle = '#000';
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    mctx.beginPath();
+    for (const c of circles) if (c.r > .5) { mctx.moveTo(c.x + c.r, c.y); mctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); }
+    mctx.fill('nonzero');
+    dctx.setTransform(1, 0, 0, 1, 0, 0);
+    dctx.globalCompositeOperation = 'destination-in';
+    dctx.drawImage(mask, 0, 0);
+    dctx.globalCompositeOperation = 'source-over';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.drawImage(dark, 0, 0);
+  }
+  applyGlitch();
+  drawCursor();
+}
+
+loadAll().then(() => {
+  loader.classList.add('done');
+  T0 = performance.now() / 1000;
+  for (let i = 0; i < 6; i++) spawnDrip(Math.random() * IW, .8);
+  touchHint();
+  requestAnimationFrame(frame);
+});
+})();
+</script>
+<script src="../shared/back.js" data-color="#2a2c2e"></script>
+</body>
+</html>

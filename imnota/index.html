@@ -1,0 +1,1335 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>I'm Not an Alien</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #5fa0e6;   /* color 1 */
+    --paper: #ffffff; /* color 2 */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: 100%; min-height: 100%; overflow-x: hidden; background: var(--paper); }
+  body { padding-bottom: 60px; }
+  body { font-family: "Share Tech Mono", monospace; color: var(--ink); font-size: 13px; }
+  button, input { font: inherit; color: inherit; }
+  canvas.px { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+
+  #bg { position: fixed; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+
+  /* header */
+  .hdr {
+    position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 4;
+    background: var(--paper); border: 2px solid var(--ink); padding: 4px 14px 5px; text-align: center; white-space: nowrap;
+  }
+  .hdr h1 { font-size: 18px; font-weight: normal; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; justify-content: center; }
+  .hdr h1 canvas { width: 20px; height: 20px; }
+  .hdr small { font-size: 11px; opacity: .85; }
+
+  /* window */
+  .win {
+    position: absolute; left: 50%; top: 92px; transform: translateX(-50%);
+    width: min(400px, calc(100vw - 32px));
+    background: var(--paper); border: 2px solid var(--ink); z-index: 3;
+  }
+  .win.shake { animation: shake .35s steps(2) 1; }
+  @keyframes shake { 0%{margin-left:-8px} 25%{margin-left:8px} 50%{margin-left:-6px} 75%{margin-left:6px} 100%{margin-left:0} }
+  .title {
+    background: var(--ink); color: var(--paper);
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 4px 6px 4px 8px; font-size: 13px; letter-spacing: 1px; user-select: none;
+  }
+  .btns { display: flex; gap: 4px; }
+  .btns b { width: 16px; height: 16px; border: 1px solid var(--paper); font-size: 11px; font-weight: normal; display: grid; place-items: center; line-height: 1; }
+  .menu { display: flex; gap: 12px; padding: 3px 6px; font-size: 12px; border-bottom: 1px solid var(--ink); }
+  .body { padding: 12px; min-height: 120px; position: relative; }
+  .status { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--ink); padding: 2px 8px; font-size: 10px; }
+  .status #msg { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .status.err { background: var(--ink); color: var(--paper); }
+
+  /* recaptcha-ish prompt bar */
+  .prompt { background: var(--ink); color: var(--paper); padding: 10px 12px 12px; margin-bottom: 10px; }
+  .prompt small { font-size: 12px; display: block; }
+  .prompt big { font-size: 22px; display: block; line-height: 1.2; letter-spacing: .5px; }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  .btn {
+    background: var(--ink); color: var(--paper); border: 2px solid var(--ink); padding: 5px 16px; cursor: pointer; letter-spacing: 1px;
+  }
+  .btn:hover { background: var(--paper); color: var(--ink); }
+  .btn.ghost { background: var(--paper); color: var(--ink); }
+  .btn.ghost:hover { background: var(--ink); color: var(--paper); }
+  .field { width: 100%; border: 2px solid var(--ink); padding: 6px 8px; background: var(--paper); outline: none; font-size: 16px; letter-spacing: 1px; }
+  .field:focus { box-shadow: 3px 3px 0 var(--ink); }
+
+  /* checkbox widget */
+  .cbox {
+    display: flex; align-items: center; gap: 14px; border: 2px solid var(--ink); padding: 14px 16px; background: var(--paper);
+    user-select: none;
+  }
+  .cbox .sq { width: 26px; height: 26px; border: 2px solid var(--ink); cursor: pointer; display: grid; place-items: center; font-size: 20px; flex: none; }
+  .cbox .sq:hover { box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 10px var(--ink); }
+  .cbox .sq.on:hover { box-shadow: none; }
+  .cbox .lbl { flex: 1; font-size: 15px; }
+  .cbox .logo { font-size: 9px; text-align: center; line-height: 1.2; }
+  .cbox .logo canvas { width: 28px; height: 28px; margin: 0 auto 2px; }
+  .spin { width: 20px; height: 20px; border: 3px dotted var(--ink); border-radius: 50%; animation: spin 1s steps(8) infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* tile grid */
+  .grid { display: grid; gap: 3px; position: relative; }
+  .tile { position: relative; cursor: pointer; border: 0; background: var(--paper); padding: 0; overflow: hidden; }
+  .tile canvas { width: 100%; height: 100%; }
+  .tile.sel { outline: 3px solid var(--ink); outline-offset: -3px; }
+  .tile.sel::after {
+    content: "✓"; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
+    background: var(--ink); color: var(--paper); display: grid; place-items: center; font-size: 13px;
+  }
+  .scene { position: relative; width: 100%; aspect-ratio: 1; }
+  .scene > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+  .scene .grid { position: absolute; inset: 0; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 0; }
+  .scene .tile { background: transparent; border: 1px solid var(--paper); }
+  .scene .tile.sel { background: rgba(255,255,255,.35); }
+
+  .icongrid { grid-template-columns: repeat(3, 1fr); }
+  .icongrid .tile { aspect-ratio: 1; border: 1px solid var(--ink); }
+  .icongrid .tile canvas { width: 70%; height: 70%; margin: 15%; }
+
+  /* play area */
+  .area { position: relative; height: 260px; border: 1px solid var(--ink); overflow: hidden; background: var(--paper); touch-action: none; }
+  .area .abs { position: absolute; }
+  .beam {
+    position: absolute; left: 50%; top: 40px; width: 220px; height: 240px; transform: translateX(-50%);
+    clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
+    background-image: radial-gradient(var(--ink) 1px, transparent 1.2px); background-size: 4px 4px;
+    opacity: .9;
+  }
+
+  .meter { height: 18px; border: 2px solid var(--ink); position: relative; margin-top: 10px; }
+  .meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); width: 0; }
+  .meter .tick { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed var(--ink); }
+
+  input[type=range] { width: 100%; accent-color: var(--ink); margin-top: 14px; }
+  .big { font-size: 34px; text-align: center; margin: 6px 0; letter-spacing: 2px; }
+  .center { text-align: center; }
+  .note { font-size: 11px; opacity: .8; }
+
+  .corner { position: fixed; bottom: 8px; background: var(--paper); border: 1px solid var(--ink); padding: 2px 8px; font-size: 11px; z-index: 4; }
+  .corner.l { left: 8px; cursor: pointer; }
+  .corner.l:hover { background: var(--ink); color: var(--paper); }
+  .corner.r { right: 8px; }
+
+  .ok-flash {
+    position: absolute; inset: 0; background: var(--paper); display: grid; place-items: center; z-index: 5;
+    font-size: 22px; letter-spacing: 3px;
+    background-image: radial-gradient(var(--ink) 1px, transparent 1.2px); background-size: 4px 4px;
+  }
+  .ok-flash span { background: var(--ink); color: var(--paper); padding: 6px 14px; }
+  .ok-flash { animation: flashIn .25s steps(4) both; }
+  .ok-flash span { animation: blink .5s steps(1) 2; }
+  @keyframes flashIn { from { clip-path: inset(50% 0 50% 0); } to { clip-path: inset(0 0 0 0); } }
+  @keyframes blink { 50% { background: var(--paper); color: var(--ink); } }
+
+  /* page transition: dither dissolve layer inside the window */
+  #dz { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
+
+  /* global static / noise */
+  #noise { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 50; pointer-events: none; image-rendering: pixelated; }
+  .scan {
+    position: fixed; inset: 0; z-index: 51; pointer-events: none;
+    background: repeating-linear-gradient(to bottom, rgba(95,160,230,.10) 0 1px, transparent 1px 3px);
+    animation: roll 8s linear infinite;
+  }
+  @keyframes roll { to { background-position: 0 300px; } }
+  .win.glitch, .hdr.glitch { animation: tear .22s steps(1) 1; }
+  @keyframes tear {
+    0%   { translate: 6px 0;  clip-path: inset(10% 0 55% 0); }
+    25%  { translate: -9px 0; clip-path: inset(40% 0 20% 0); }
+    50%  { translate: 4px 0;  clip-path: inset(0 0 70% 0); }
+    75%  { translate: -3px 0; clip-path: inset(65% 0 5% 0); }
+    100% { translate: 0 0;    clip-path: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .scan { animation: none; } }
+
+  /* error popups (shown on wrong answers) */
+  .err-pop {
+    position: fixed; z-index: 40; width: 240px; max-width: calc(100vw - 32px);
+    background: var(--paper); border: 2px solid var(--ink); box-shadow: 5px 5px 0 var(--ink);
+    pointer-events: none; /* never block the game underneath; only buttons are clickable */
+    animation: popIn .22s steps(4) both;
+  }
+  .err-pop.out { animation: popOut .16s steps(3) both; }
+  @keyframes popIn  { from { scale: .2 .05; } 60% { scale: 1.04 .1; } to { scale: 1 1; } }
+  @keyframes popOut { to { scale: 1 .02; opacity: 0; } }
+  .err-pop .title { font-size: 12px; padding: 3px 5px 3px 7px; }
+  .err-pop .title b { cursor: pointer; }
+  .err-pop .in { display: flex; gap: 12px; align-items: flex-start; padding: 14px 14px 6px; font-size: 12px; line-height: 1.5; }
+  .err-pop .in canvas { width: 36px; height: 36px; flex: none; }
+  .err-pop .code { font-size: 10px; opacity: .75; display: block; margin-top: 4px; }
+  .err-pop .foot { display: flex; justify-content: center; padding: 6px 0 12px; }
+  .err-pop .foot .btn { padding: 3px 22px; }
+  .err-pop .btn, .err-pop .btns b { pointer-events: auto; }
+
+  /* on-screen keyboard (touch kiosk) */
+  .vkb {
+    position: fixed; left: 50%; bottom: 0; z-index: 45; width: min(720px, 100vw);
+    translate: -50% 110%; transition: translate .22s steps(5);
+    background: var(--paper); border: 2px solid var(--ink); border-bottom: 0; box-shadow: 0 -5px 0 var(--ink);
+    user-select: none; touch-action: manipulation;
+  }
+  .vkb.show { translate: -50% 0; }
+  .vkb .title { font-size: 12px; }
+  .vkb .keys { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .vkb .r { display: flex; gap: 6px; justify-content: center; }
+  .vkb button {
+    flex: 1 1 0; min-width: 0; height: 52px; max-width: 64px;
+    background: var(--paper); color: var(--ink); border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink);
+    font-size: 20px; cursor: pointer; padding: 0;
+  }
+  .vkb button:active, .vkb button.down { background: var(--ink); color: var(--paper); translate: 2px 2px; box-shadow: 1px 1px 0 var(--ink); }
+  .vkb button.w2 { flex-grow: 1.6; max-width: 110px; font-size: 14px; }
+  .vkb button.w5 { flex-grow: 5; max-width: 340px; font-size: 14px; }
+  .vkb button.ok { background: var(--ink); color: var(--paper); }
+  .vkb.num button { max-width: 96px; height: 58px; }
+  body.kb-open { padding-bottom: 300px; }
+  .field[inputmode="none"] { caret-color: var(--ink); cursor: pointer; }
+
+  /* wrong tile mark */
+  .tile.wrong { background: var(--ink); }
+  .tile.wrong canvas { opacity: .25; }
+  .tile.wrong::after {
+    content: "✕"; position: absolute; inset: 0; display: grid; place-items: center;
+    color: var(--paper); font-size: 44px;
+  }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+
+<div class="hdr">
+  <h1><span id="hdrIcon"></span>I'm Not an Alien</h1>
+  <small id="lvlName">Level 1: Checkbox</small>
+</div>
+
+<div class="win" id="win">
+  <div class="title">
+    <span id="winTitle">C:\NOT_ALIEN\LVL_01.EXE</span>
+    <div class="btns"><b>_</b><b>[]</b><b>X</b></div>
+  </div>
+  <div class="menu"><span>File</span><span>Edit</span><span>View</span><span>Help</span></div>
+  <div class="body" id="body"></div>
+  <div class="status" id="status"><span id="obj">Lvl: 01/12</span><span id="msg">Awaiting input...</span><span>Earth Intranet</span></div>
+</div>
+
+<canvas id="noise"></canvas>
+<div class="scan"></div>
+
+<div class="vkb" id="vkb" aria-hidden="true">
+  <div class="title"><span>KEYBOARD.EXE</span><div class="btns"><b id="vkbClose">X</b></div></div>
+  <div class="keys" id="vkbKeys"></div>
+</div>
+
+<div class="corner l" id="reset">Reset</div>
+<div class="corner r">Made by a human (probably)</div>
+
+<script>
+/* ==========================================================
+   BACKGROUND: dithered flowing clouds (WebGL)
+   ========================================================== */
+(() => {
+  const canvas = document.getElementById('bg');
+  const gl = canvas.getContext('webgl', { antialias: false });
+  if (!gl) return;
+  const PIXEL = 2;
+  const vs = `attribute vec2 p; void main(){ gl_Position = vec4(p,0.,1.); }`;
+  const fs = `
+  precision highp float;
+  uniform vec2 uRes; uniform float uTime;
+  float hash(vec2 p){ p = fract(p*vec2(123.34,456.21)); p += dot(p,p+45.32); return fract(p.x*p.y); }
+  float noise(vec2 p){ vec2 i=floor(p), f=fract(p); vec2 u=f*f*(3.-2.*f);
+    return mix(mix(hash(i),hash(i+vec2(1,0)),u.x), mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),u.x), u.y); }
+  float fbm(vec2 p){ float v=0., a=.5; mat2 r=mat2(.8,.6,-.6,.8);
+    for(int i=0;i<6;i++){ v+=a*noise(p); p=r*p*2.02+17.1; a*=.5; } return v; }
+  float bayer2(vec2 a){ a=floor(a); return fract(a.x/2.+a.y*a.y*.75); }
+  float bayer4(vec2 a){ return bayer2(.5*a)*.25+bayer2(a); }
+  float bayer8(vec2 a){ return bayer4(.5*a)*.25+bayer2(a); }
+  void main(){
+    vec2 px = gl_FragCoord.xy; vec2 uv = px/uRes.y*3.2; float t = uTime;
+    vec2 drift = vec2(t*.10, t*.035);
+    vec2 q = vec2(fbm(uv+drift), fbm(uv+drift+vec2(5.2,1.3)));
+    vec2 r = vec2(fbm(uv+1.8*q+vec2(1.7,9.2)+t*.06), fbm(uv+1.8*q+vec2(8.3,2.8)-t*.04));
+    float n = fbm(uv+2.2*r+drift*.5);
+    float v = smoothstep(.26,.66,n);
+    float on = step(bayer8(px), v);
+    gl_FragColor = vec4(mix(vec3(1.), vec3(.3725,.6275,.902), on), 1.);
+  }`;
+  const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
+  const prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, vs)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, fs));
+  gl.linkProgram(prog); gl.useProgram(prog);
+  gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1,3,-1,-1,3]), gl.STATIC_DRAW);
+  const loc = gl.getAttribLocation(prog, 'p'); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+  const uRes = gl.getUniformLocation(prog, 'uRes'), uTime = gl.getUniformLocation(prog, 'uTime');
+  const resize = () => {
+    canvas.width = Math.ceil(innerWidth / PIXEL); canvas.height = Math.ceil(innerHeight / PIXEL);
+    gl.viewport(0, 0, canvas.width, canvas.height); gl.uniform2f(uRes, canvas.width, canvas.height);
+  };
+  addEventListener('resize', resize); resize();
+  const t0 = performance.now();
+  (function frame(now){ gl.uniform1f(uTime, (now - t0) / 1000); gl.drawArrays(gl.TRIANGLES, 0, 3); requestAnimationFrame(frame); })(t0);
+})();
+
+/* ==========================================================
+   2-COLOR DITHER HELPERS
+   ========================================================== */
+const INK = [95, 160, 230], PAPER = [255, 255, 255];
+const B8 = [0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,60,28,52,20,62,30,54,22,
+            3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
+
+// converts whatever is drawn on ctx into ink/paper dots; outline=true draws edges of opaque shapes
+function dither(ctx, w, h, { outline = false, gain = 1 } = {}) {
+  const img = ctx.getImageData(0, 0, w, h), d = img.data;
+  const A = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) A[i] = d[i * 4 + 3] > 40 ? 1 : 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x, k = i * 4;
+    let on = false;
+    if (A[i]) {
+      const lum = (0.3 * d[k] + 0.59 * d[k + 1] + 0.11 * d[k + 2]) / 255;
+      const dark = Math.min(1, (1 - lum) * gain * (outline ? 1.25 : 1) + (outline ? .08 : 0));
+      on = dark > (B8[(y % 8) * 8 + (x % 8)] + .5) / 64;
+      if (outline && !on) {
+        const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1 || !A[i - 1] || !A[i + 1] || !A[i - w] || !A[i + w];
+        if (edge) on = true;
+      }
+    }
+    const c = on ? INK : PAPER;
+    d[k] = c[0]; d[k + 1] = c[1]; d[k + 2] = c[2]; d[k + 3] = (A[i] || !outline) ? 255 : 0;
+  }
+  ctx.putImageData(img, 0, 0);
+}
+
+// emoji -> tiny dithered pixel icon
+function icon(ch, res = 28) {
+  const c = document.createElement('canvas'); c.width = c.height = res; c.className = 'px';
+  const x = c.getContext('2d');
+  x.textAlign = 'center'; x.textBaseline = 'middle';
+  x.font = `${Math.round(res * .8)}px "Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif`;
+  x.fillText(ch, res / 2, res / 2 + res * .06);
+  dither(x, res, res, { outline: true });
+  return c;
+}
+
+const $ = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const shuffle = (arr) => arr.map(v => [Math.random(), v]).sort((a, b) => a[0] - b[0]).map(v => v[1]);
+
+/* ==========================================================
+   GAME ENGINE
+   ========================================================== */
+const body = document.getElementById('body'), win = document.getElementById('win');
+const msgEl = document.getElementById('msg'), statusEl = document.getElementById('status');
+let cur = 0, cleanup = null, busy = false;
+
+document.getElementById('hdrIcon').appendChild(icon('👽', 20));
+
+function setMsg(text, err = false) { msgEl.textContent = text; statusEl.classList.toggle('err', err); }
+
+/* ---------- global static noise ---------- */
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let noiseBoost = 0; // 0..1, raised during transitions / errors
+(() => {
+  const cv = document.getElementById('noise'), x = cv.getContext('2d');
+  const S = 2; // noise grain size (px)
+  let img, buf, w, h, band = -40, last = 0;
+  const INK32 = (255 << 24) | (INK[2] << 16) | (INK[1] << 8) | INK[0];
+  const WHITE32 = 0xffffffff;
+  const resize = () => {
+    w = cv.width = Math.max(1, Math.ceil(innerWidth / S)); h = cv.height = Math.max(1, Math.ceil(innerHeight / S));
+    img = x.createImageData(w, h); buf = new Uint32Array(img.data.buffer);
+  };
+  addEventListener('resize', resize); resize();
+  (function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - last < 1000 / 24) return; // film-ish 24fps flicker
+    last = now;
+    const base = .035 + noiseBoost * .35;
+    band += 3; if (band > h + 40) band = -40 - Math.random() * h; // VHS tracking band
+    for (let y = 0; y < h; y++) {
+      const inBand = Math.abs(y - band) < 10;
+      const p = inBand ? .35 + noiseBoost * .3 : base;
+      const row = y * w;
+      for (let i = 0; i < w; i++) {
+        const r = Math.random();
+        buf[row + i] = r < p * .5 ? INK32 : r < p ? WHITE32 : 0;
+      }
+    }
+    // rare full-width static lines
+    const lines = 2 + Math.floor(noiseBoost * 20);
+    for (let k = 0; k < lines; k++) {
+      if (Math.random() > .5) continue;
+      const y = Math.floor(Math.random() * h), row = y * w, c = Math.random() < .5 ? INK32 : WHITE32;
+      for (let i = 0; i < w; i++) if (Math.random() < .7) buf[row + i] = c;
+    }
+    x.putImageData(img, 0, 0);
+    cv.style.opacity = (REDUCED ? .35 : .55) + noiseBoost * .45;
+  })(0);
+  // random glitch tears
+  const hdr = document.querySelector('.hdr');
+  (function tear() {
+    setTimeout(() => {
+      const el = Math.random() < .75 ? win : hdr;
+      el.classList.remove('glitch'); void el.offsetWidth; el.classList.add('glitch');
+      noiseBoost = Math.max(noiseBoost, .5); setTimeout(() => noiseBoost = 0, 180);
+      tear();
+    }, rand(2500, 7000));
+  })();
+})();
+
+/* ---------- page transitions ---------- */
+const dz = document.createElement('canvas'); dz.id = 'dz'; dz.className = 'px'; win.appendChild(dz);
+function dissolve(from, to, ms) {
+  // dithered wipe: pixels flip to ink in Bayer order (+ jitter) as p goes 0 -> 1
+  const S = 3, w = dz.width = Math.max(1, Math.ceil(win.clientWidth / S)), h = dz.height = Math.max(1, Math.ceil(win.clientHeight / S));
+  const x = dz.getContext('2d'), img = x.createImageData(w, h), d = new Uint32Array(img.data.buffer);
+  const INK32 = (255 << 24) | (INK[2] << 16) | (INK[1] << 8) | INK[0];
+  const thr = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) for (let i = 0; i < w; i++)
+    thr[y * w + i] = ((B8[(y % 8) * 8 + (i % 8)] + .5) / 64) * .75 + Math.random() * .25;
+  return new Promise(res => {
+    const t0 = performance.now();
+    (function step(now) {
+      const k = Math.min(1, (now - t0) / ms), p = from + (to - from) * k;
+      for (let j = 0; j < d.length; j++) d[j] = thr[j] < p ? INK32 : 0;
+      x.putImageData(img, 0, 0);
+      k < 1 ? requestAnimationFrame(step) : res();
+    })(t0);
+  });
+}
+const crt = (frames, ms) => win.animate(frames, { duration: ms, easing: 'steps(7, end)', fill: 'forwards' }).finished;
+async function transitionOut() {
+  if (REDUCED) return;
+  noiseBoost = .6;
+  await dissolve(0, 1.05, 380);
+  await crt([{ scale: '1 1' }, { scale: '1.03 .015', offset: .55 }, { scale: '0 .015' }], 300);
+}
+async function transitionIn() {
+  if (REDUCED) { dz.width = dz.height = 0; return; }
+  noiseBoost = .6;
+  // make sure the window starts fully covered (e.g. on first boot)
+  dz.width = 4; dz.height = 4;
+  const c = dz.getContext('2d'); c.fillStyle = 'rgb(' + INK + ')'; c.fillRect(0, 0, 4, 4);
+  await crt([{ scale: '0 .015' }, { scale: '1.03 .015', offset: .45 }, { scale: '1 1' }], 320);
+  win.getAnimations().forEach(a => a.cancel());
+  noiseBoost = .25;
+  await dissolve(1.05, 0, 420);
+  noiseBoost = 0;
+}
+async function swap(fn) {
+  busy = true;
+  await transitionOut();
+  fn();
+  await transitionIn();
+  busy = false;
+}
+const go = (i) => { if (!busy) swap(() => load(i)); };
+
+// scrambled-text reveal for header/title
+function scramble(el, text, ms = 420) {
+  const glyphs = '▓▒░#@$%&/\\<>=+*01';
+  const t0 = performance.now();
+  clearInterval(el._scr);
+  el._scr = setInterval(() => {
+    const k = (performance.now() - t0) / ms;
+    const n = Math.floor(text.length * k);
+    el.textContent = text.slice(0, n) + [...text.slice(n)].map(c => c === ' ' ? ' ' : glyphs[Math.floor(Math.random() * glyphs.length)]).join('');
+    if (k >= 1) { clearInterval(el._scr); el.textContent = text; }
+  }, 30);
+}
+
+/* ---------- sound memory: silently remembers every sound people make ---------- */
+// Nothing is shown on screen. Stored in this browser (localStorage) so it survives reloads.
+// Access from the browser console:
+//   soundMemory.all()         -> every recorded sound event
+//   soundMemory.sessions()    -> list of session ids (one per page load)
+//   soundMemory.replay(id?)   -> play a session back with original timing (default: previous session)
+//   soundMemory.download()    -> save everything as a JSON file
+//   soundMemory.clear()       -> forget everything (in this browser; the server archive is kept)
+//   soundMemory.flush()       -> send unsent events to the server now
+// When the page is served by server/server.ps1, every event is also sent to the server and
+// archived in sound-archive/YYYY-MM-DD.jsonl. Unsent events wait in a queue and are retried,
+// so nothing is lost if the server is briefly down (or the page is opened as a plain file).
+const soundMemory = (() => {
+  const KEY = 'notalien.soundmem', QKEY = 'notalien.soundmem.pending', MAX = 10000, QMAX = 20000;
+  const API = 'api/sounds';
+  const session = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  let seq = 0;
+  let events = [], pending = [];
+  try { events = JSON.parse(localStorage.getItem(KEY)) || []; } catch (e) {}
+  try { pending = JSON.parse(localStorage.getItem(QKEY)) || []; } catch (e) {}
+  let dirty = false, timer = 0;
+  const store = (k, arr) => {
+    try { localStorage.setItem(k, JSON.stringify(arr)); return arr; }
+    catch (e) { // storage full: drop the oldest half and retry
+      arr = arr.slice(-Math.floor(arr.length / 2));
+      try { localStorage.setItem(k, JSON.stringify(arr)); } catch (e2) {}
+      return arr;
+    }
+  };
+  const save = () => {
+    if (!dirty) return; dirty = false;
+    events = store(KEY, events);
+    pending = store(QKEY, pending);
+  };
+
+  // ---- upload to the server ----
+  const canUpload = location.protocol.startsWith('http');
+  let sending = false;
+  async function flush() {
+    if (!canUpload || sending || !pending.length) return;
+    sending = true;
+    const batch = pending.slice(0, 500);
+    try {
+      const r = await fetch(API, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ events: batch }), keepalive: true,
+      });
+      if (r.ok) {
+        const ids = new Set(batch.map(e => e.id));
+        pending = pending.filter(e => !ids.has(e.id));
+        dirty = true; save();
+      }
+    } catch (e) { /* server offline: keep the queue, retry later */ }
+    sending = false;
+  }
+  setInterval(flush, 5000);
+  addEventListener('online', flush);
+  addEventListener('pagehide', () => {
+    save();
+    // last chance on close/reload; the queue stays in storage too, duplicates can be removed by "id"
+    if (canUpload && pending.length && navigator.sendBeacon) {
+      navigator.sendBeacon(API, new Blob([JSON.stringify({ events: pending.slice(0, 500) })], { type: 'application/json' }));
+    }
+  });
+
+  return {
+    session,
+    add(type, data = {}) {
+      const e = { id: `${session}-${seq++}`, t: Date.now(), s: session, lvl: cur + 1, type, ...data };
+      events.push(e);
+      if (events.length > MAX) events.splice(0, events.length - MAX);
+      pending.push(e);
+      if (pending.length > QMAX) pending.splice(0, pending.length - QMAX);
+      dirty = true; clearTimeout(timer); timer = setTimeout(() => { save(); flush(); }, 800);
+    },
+    flush,
+    pending: () => pending.length,
+    all: () => events.slice(),
+    sessions: () => [...new Set(events.map(e => e.s))],
+    download() {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([JSON.stringify(events, null, 1)], { type: 'application/json' }));
+      a.download = `sound-memory-${new Date().toISOString().slice(0, 19).replace(/:/g, '')}.json`;
+      a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    },
+    clear() { events = []; dirty = true; save(); },
+    replay(id, speed = 1) {
+      if (!id) { const ss = this.sessions().filter(s => s !== session); id = ss[ss.length - 1] || session; }
+      const list = events.filter(e => e.s === id);
+      if (!list.length) return () => {};
+      const t0 = list[0].t, timers = list.map(e => setTimeout(() => sfx.play(e), (e.t - t0) / speed));
+      return () => timers.forEach(clearTimeout);
+    },
+  };
+})();
+
+/* ---------- sound: every touch plays a different note, as long as the finger stays down ---------- */
+const sfx = (() => {
+  let ac = null, master = null;
+  // C major pentatonic, 2+ octaves (MIDI note numbers)
+  const SCALE = [60, 62, 64, 67, 69, 72, 74, 76, 79, 81, 84, 86];
+  let idx = 5;
+  const hz = m => 440 * Math.pow(2, (m - 69) / 12);
+  const ctx = () => {
+    if (!ac) {
+      const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return null;
+      ac = new AC(); master = ac.createGain(); master.gain.value = .5; master.connect(ac.destination);
+    }
+    if (ac.state === 'suspended') ac.resume();
+    return ac;
+  };
+  const rec = (type, data) => soundMemory.add(type, data);
+  function tone(freq, { type = 'square', t = 0, dur = .14, vol = .12, slide = 0 } = {}) {
+    const a = ctx(); if (!a) return;
+    const at = a.currentTime + t;
+    const o = a.createOscillator(), g = a.createGain(), f = a.createBiquadFilter();
+    o.type = type; o.frequency.setValueAtTime(freq, at);
+    if (slide) o.frequency.exponentialRampToValueAtTime(freq * slide, at + dur);
+    f.type = 'lowpass'; f.frequency.value = 3200; // soften the square wave a bit
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(vol, at + .005);
+    g.gain.exponentialRampToValueAtTime(.0001, at + dur);
+    o.connect(f); f.connect(g); g.connect(master);
+    o.start(at); o.stop(at + dur + .02);
+  }
+  // held note: sounds until release() is called (length = how long the finger was down)
+  const MIN_NOTE = .09, MAX_NOTE = 8;
+  function voice(midi) {
+    const a = ctx(); if (!a) return { release() {} };
+    const at = a.currentTime;
+    const o = a.createOscillator(), g = a.createGain(), f = a.createBiquadFilter();
+    o.type = 'square'; o.frequency.value = hz(midi);
+    f.type = 'lowpass'; f.frequency.value = 3200;
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(.12, at + .005);
+    g.gain.setTargetAtTime(.055, at + .01, .15); // settle to a softer sustain while held
+    o.connect(f); f.connect(g); g.connect(master);
+    o.start(at);
+    tone(hz(midi + 12), { vol: .03, dur: .08 }); // tiny sparkle octave on the attack
+    let done = false;
+    const release = () => {
+      if (done) return; done = true;
+      const n = Math.max(a.currentTime, at + MIN_NOTE);
+      if (g.gain.cancelAndHoldAtTime) g.gain.cancelAndHoldAtTime(n);
+      else { g.gain.cancelScheduledValues(n); g.gain.setValueAtTime(.055, n); }
+      g.gain.setTargetAtTime(0, n, .035);
+      o.stop(n + .3);
+    };
+    const cap = setTimeout(release, MAX_NOTE * 1000);
+    return { release() { clearTimeout(cap); release(); } };
+  }
+  // fixed-length version of a held note (used for replay)
+  function note(midi, dur) {
+    const v = voice(midi);
+    setTimeout(() => v.release(), Math.max(MIN_NOTE, dur) * 1000);
+  }
+  // shared white-noise buffer for breath / crunch
+  let noiseBuf = null;
+  const getNoise = (a) => {
+    if (!noiseBuf) {
+      noiseBuf = a.createBuffer(1, a.sampleRate * 2, a.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    return noiseBuf;
+  };
+  // filtered noise burst; returns a stop() that fades it out early
+  function noise({ t = 0, dur = .2, vol = .1, type = 'bandpass', freq = 1000, freqTo = 0, q = 1, attack = .005 } = {}) {
+    const a = ctx(); if (!a) return () => {};
+    const at = a.currentTime + t;
+    const s = a.createBufferSource(), f = a.createBiquadFilter(), g = a.createGain();
+    s.buffer = getNoise(a); s.loop = true;
+    f.type = type; f.Q.value = q; f.frequency.setValueAtTime(freq, at);
+    if (freqTo) f.frequency.exponentialRampToValueAtTime(freqTo, at + dur);
+    g.gain.setValueAtTime(0, at);
+    g.gain.linearRampToValueAtTime(vol, at + attack);
+    g.gain.exponentialRampToValueAtTime(.0001, at + dur);
+    s.connect(f); f.connect(g); g.connect(master);
+    s.start(at, Math.random() * 1.5); s.stop(at + dur + .05);
+    return () => { const n = a.currentTime; g.gain.cancelScheduledValues(n); g.gain.setTargetAtTime(0, n, .05); };
+  }
+
+  // raw sound makers (no recording) — shared by live play and replay
+  const raw = {
+    hum() {
+      const a = ctx(); if (!a) return { set() {}, stop() {} };
+      const o1 = a.createOscillator(), o2 = a.createOscillator(), lp = a.createBiquadFilter(), g = a.createGain();
+      o1.type = 'sawtooth'; o1.frequency.value = 48;
+      o2.type = 'sine'; o2.frequency.value = 96;
+      lp.type = 'lowpass'; lp.frequency.value = 300; lp.Q.value = 1;
+      g.gain.value = 0;
+      o1.connect(lp); o2.connect(lp); lp.connect(g); g.connect(master);
+      o1.start(); o2.start();
+      let dead = false;
+      return {
+        set(p) { if (!dead) g.gain.setTargetAtTime(.03 + .32 * p * p, a.currentTime, .08); },
+        stop() {
+          if (dead) return; dead = true;
+          const n = a.currentTime;
+          g.gain.cancelScheduledValues(n); g.gain.setTargetAtTime(0, n, .06);
+          [o1, o2].forEach(o => o.stop(n + .5));
+        },
+      };
+    },
+    loading(dur) {
+      const n = Math.floor(dur / .075);
+      for (let i = 0; i < n; i++) tone(hz(pick([79, 84, 86, 91])), { t: i * .075, dur: .04, vol: .045 });
+    },
+    inhale() { return noise({ dur: 1.4, vol: .22, type: 'bandpass', freq: 500, freqTo: 2400, q: .7, attack: .35 }); },
+    crunch() {
+      noise({ dur: .11, vol: .5, type: 'bandpass', freq: 2600, freqTo: 1200, q: .6 });
+      [0, .018, .04, .065, .09].forEach((t, i) => noise({ t, dur: .03, vol: .35 - i * .05, type: 'highpass', freq: 2500 + Math.random() * 2500 }));
+      tone(130, { type: 'sine', dur: .12, vol: .22, slide: .45 });
+    },
+    pass() { [72, 76, 79, 84].forEach((m, i) => tone(hz(m), { t: i * .07, dur: .16, vol: .1 })); },
+    error(k) { tone(hz(50 - k * 3), { type: 'sawtooth', dur: .18, vol: .09, slide: .7 }); },
+  };
+
+  const held = new Map(); // pointerId -> { v, midi, t0 }
+  return {
+    // steady low "woooong" tractor-beam hum; set(p) with p = 0 (far) .. 1 (at the UFO) only changes volume
+    hum() {
+      const h = raw.hum(), t0 = performance.now(); let peak = 0, stopped = false;
+      return {
+        set(p) { peak = Math.max(peak, p); h.set(p); },
+        stop() { if (stopped) return; stopped = true; h.stop(); rec('hum', { dur: +((performance.now() - t0) / 1000).toFixed(2), peak: +peak.toFixed(2) }); },
+      };
+    },
+    // checkbox "processing" chatter
+    loading(dur = 1.1) { raw.loading(dur); rec('loading', { dur }); },
+    // breath in: rising airy noise
+    inhale() {
+      const stop = raw.inhale(), t0 = performance.now(); let logged = false;
+      const log = () => { if (logged) return; logged = true; rec('inhale', { dur: +Math.min(1.4, (performance.now() - t0) / 1000).toFixed(2) }); };
+      const auto = setTimeout(log, 1400);
+      return () => { clearTimeout(auto); log(); stop(); };
+    },
+    // apple crunch
+    crunch() { raw.crunch(); rec('crunch'); },
+    pass() { raw.pass(); rec('pass'); },
+    error(k = 0) { raw.error(k); rec('error', { k }); },
+    // touch down: pick the next note (melodic random walk, never the same pitch twice) and hold it
+    down(id) {
+      if (held.has(id)) return;
+      let step = 0; while (!step) step = Math.round(rand(-3, 3));
+      idx = Math.max(0, Math.min(SCALE.length - 1, idx + step));
+      if (idx === 0 || idx === SCALE.length - 1) idx = Math.max(1, Math.min(SCALE.length - 2, idx - Math.sign(step) * 2));
+      const midi = SCALE[idx];
+      held.set(id, { v: voice(midi), midi, t0: performance.now() });
+    },
+    // touch up: the note ends, its length = how long it was held
+    up(id) {
+      const h = held.get(id); if (!h) return;
+      held.delete(id);
+      h.v.release();
+      const dur = Math.min(MAX_NOTE, Math.max(MIN_NOTE, (performance.now() - h.t0) / 1000));
+      rec('note', { midi: h.midi, dur: +dur.toFixed(3) });
+    },
+    upAll() { [...held.keys()].forEach(id => this.up(id)); },
+    // replay one remembered event (not re-recorded)
+    play(e) {
+      if (e.type === 'note') note(e.midi, e.dur);
+      else if (e.type === 'hum') { const h = raw.hum(); h.set(e.peak || .5); setTimeout(() => h.stop(), (e.dur || 1) * 1000); }
+      else if (e.type === 'inhale') { const stop = raw.inhale(); setTimeout(stop, (e.dur || 1.4) * 1000); }
+      else if (e.type === 'loading') raw.loading(e.dur || 1.1);
+      else if (e.type === 'error') raw.error(e.k || 0);
+      else if (raw[e.type]) raw[e.type]();
+    },
+  };
+})();
+document.addEventListener('pointerdown', e => sfx.down(e.pointerId), { capture: true, passive: true });
+addEventListener('pointerup', e => sfx.up(e.pointerId), { capture: true, passive: true });
+addEventListener('pointercancel', e => sfx.up(e.pointerId), { capture: true, passive: true });
+addEventListener('blur', () => sfx.upAll());
+
+/* ---------- on-screen keyboard (for touch kiosks without a keyboard) ---------- */
+const vkb = (() => {
+  const el = document.getElementById('vkb'), keysEl = document.getElementById('vkbKeys');
+  const LAYOUTS = {
+    text: ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', ['Z', 'X', 'C', 'V', 'B', 'N', 'M', '⌫'], ['HIDE', 'SPACE', 'ENTER']],
+    num:  ['123', '456', '789', ['⌫', '0', 'ENTER']],
+  };
+  let target = null, mode = '';
+  function build(m) {
+    if (m === mode) return; mode = m;
+    el.classList.toggle('num', m === 'num');
+    keysEl.innerHTML = '';
+    LAYOUTS[m].forEach(row => {
+      const r = document.createElement('div'); r.className = 'r';
+      [...row].forEach(k => {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = k === 'SPACE' ? 'SPACE' : k; b.dataset.k = k;
+        if (k === '⌫' || k === 'HIDE') b.className = 'w2';
+        if (k === 'ENTER') b.className = 'w2 ok';
+        if (k === 'SPACE') b.className = 'w5';
+        r.appendChild(b);
+      });
+      keysEl.appendChild(r);
+    });
+  }
+  function press(k) {
+    if (!target) return;
+    if (k === 'HIDE') return hide();
+    if (k === 'ENTER') { target.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); return; }
+    if (k === '⌫') target.value = target.value.slice(0, -1);
+    else if (k === 'SPACE') target.value += ' ';
+    else if (target.value.length < 24) target.value += k;
+    target.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+  keysEl.addEventListener('pointerdown', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    e.preventDefault(); // keep focus on the input field
+    b.classList.add('down'); setTimeout(() => b.classList.remove('down'), 110);
+    press(b.dataset.k);
+  });
+  document.getElementById('vkbClose').addEventListener('pointerdown', e => { e.preventDefault(); hide(); });
+  function show(input) {
+    target = input;
+    build(input.type === 'number' ? 'num' : 'text');
+    el.classList.add('show'); el.setAttribute('aria-hidden', 'false');
+    document.body.classList.add('kb-open');
+    setTimeout(() => input.scrollIntoView({ block: 'center', behavior: 'smooth' }), 60);
+  }
+  function hide() {
+    target = null;
+    el.classList.remove('show'); el.setAttribute('aria-hidden', 'true');
+    document.body.classList.remove('kb-open');
+  }
+  function attach(input) {
+    input.setAttribute('inputmode', 'none'); // suppress the OS keyboard; physical keys still work
+    input.addEventListener('focus', () => show(input));
+    input.addEventListener('pointerdown', () => show(input));
+    if (document.activeElement === input) show(input);
+  }
+  // tap outside the field & keyboard closes it
+  document.addEventListener('pointerdown', e => {
+    if (!target || el.contains(e.target) || e.target.closest('.field') || e.target.closest('.btn')) return;
+    hide();
+  });
+  return { attach, hide };
+})();
+
+/* ---------- error popups: 3 cascading "internet error" windows ---------- */
+const ERR_EXTRA = [
+  ['ALIENCAPTCHA.DLL', 'Non-human behaviour detected.', '0x00A11EN'],
+  ['SECURITY ALERT', 'Error 404: humanity not found.', '0xDEADBEEF'],
+  ['INTERNET EXPLORER', 'The page cannot verify you are human.', 'HTTP 451'],
+  ['SYSTEM', 'Antenna signal detected nearby.', '0x0000UFO'],
+  ['EARTH.EXE', 'This program has performed an illegal operation.', '0xE4R7H'],
+  ['WARNING', 'Suspicion level: rising.', 'LVL++'],
+];
+let errTimers = [];
+function errorPopups(text, extraOverride) {
+  errTimers.forEach(clearTimeout); errTimers = [];
+  document.querySelectorAll('.err-pop').forEach(p => p.remove());
+  const extra = extraOverride || shuffle(ERR_EXTRA).slice(0, 2);
+  const list = [['VERIFICATION FAILED', text, '0x' + (cur + 1).toString(16).padStart(4, '0').toUpperCase() + 'F41L'], ...extra];
+  const r = win.getBoundingClientRect();
+  const W = Math.min(240, innerWidth - 32), H = 150;
+  // Park the popups around the edges of the game window so they only nibble
+  // at its border (~25%) instead of covering tiles / buttons.
+  const roomSide = Math.min(r.left, innerWidth - r.right) > W * .55;
+  let slots;
+  if (roomSide) {
+    // VERIFY buttons live at the bottom-right, so the right side only gets the top corner
+    slots = shuffle([
+      [r.left - W * .82, r.top + 10],
+      [r.left - W * .84, r.top + r.height * .5],
+      [r.right - W * .18, r.top - H * .45],
+    ]);
+  } else {
+    // narrow screen: fan out along the top edge (over the title bar / header only)
+    slots = [0, 1, 2].map(i => [r.left + (r.width - W) * (i / 2), r.top - H * .72 + i * 14]);
+  }
+  slots = slots.map(([x, y]) => [
+    Math.max(6, Math.min(x + rand(-12, 12), innerWidth - W - 6)),
+    Math.max(6, Math.min(y + rand(-10, 10), innerHeight - H - 6)),
+  ]);
+  list.reverse().forEach(([title, msg, code], k) => {
+    const i = list.length - 1 - k; // first message ends up on top, spawned last
+    errTimers.push(setTimeout(() => {
+      sfx.error(k);
+      const p = $(`<div class="err-pop" role="alertdialog">
+        <div class="title"><span>${title}</span><div class="btns"><b>X</b></div></div>
+        <div class="in"><div class="ic"></div><div>${msg}<span class="code">Error code: ${code}</span></div></div>
+        <div class="foot"><button class="btn">OK</button></div></div>`);
+      p.style.left = slots[i][0] + 'px';
+      p.style.top = slots[i][1] + 'px';
+      p.querySelector('.ic').replaceWith(icon(i === 0 ? '⛔' : pick(['⚠️', '❌', '👽']), 24));
+      const close = () => { p.classList.add('out'); setTimeout(() => p.remove(), 170); };
+      p.querySelector('.btn').onclick = close;
+      p.querySelector('.btns b').onclick = close;
+
+      document.body.appendChild(p);
+      noiseBoost = .6; setTimeout(() => noiseBoost = 0, 120);
+      // auto close in reverse order so the real message stays longest
+      errTimers.push(setTimeout(close, 3300 - i * 350));
+    }, k * 140));
+  });
+}
+
+const api = {
+  pass(text = 'VERIFIED') {
+    if (busy) return; busy = true;
+    setMsg('Human signature confirmed.');
+    sfx.pass();
+    const f = $(`<div class="ok-flash"><span>✓ ${text}</span></div>`);
+    body.appendChild(f);
+    setTimeout(() => swap(() => load(cur + 1)), 750);
+  },
+  fail(text, extraPopups) {
+    errorPopups(text, extraPopups);
+    setMsg('ERR: ' + text, true);
+    win.classList.remove('shake'); void win.offsetWidth; win.classList.add('shake');
+    noiseBoost = .7; setTimeout(() => noiseBoost = 0, 260);
+  },
+  prompt(small, big) { return `<div class="prompt"><small>${small}</small><big>${big}</big></div>`; },
+};
+
+function load(i) {
+  if (cleanup) { try { cleanup(); } catch (e) {} }
+  cleanup = null;
+  errTimers.forEach(clearTimeout); errTimers = [];
+  document.querySelectorAll('.err-pop').forEach(p => p.remove());
+  cur = Math.max(0, Math.min(i, LEVELS.length - 1));
+  try { localStorage.setItem('notalien.level', cur); } catch (e) {}
+  const L = LEVELS[cur];
+  const n = String(cur + 1).padStart(2, '0');
+  scramble(document.getElementById('lvlName'), L.final ? 'Complete' : `Level ${cur + 1}: ${L.name}`, 600);
+  scramble(document.getElementById('winTitle'), L.final ? 'C:\\NOT_ALIEN\\RESULT.LOG' : `C:\\NOT_ALIEN\\LVL_${n}.EXE`, 500);
+  document.getElementById('obj').textContent = L.final ? 'Lvl: --' : `Lvl: ${n}/${LEVELS.length - 1}`;
+  setMsg('Awaiting input...');
+  body.innerHTML = '';
+  vkb.hide();
+  cleanup = L.render(body, api) || null;
+  body.querySelectorAll('.field').forEach(vkb.attach);
+}
+
+document.getElementById('reset').onclick = () => go(0);
+
+/* ==========================================================
+   LEVELS
+   ========================================================== */
+const LEVELS = [
+
+/* 1 ------------------------------------------------------- */
+{ name: 'Checkbox', render(el, g) {
+  el.innerHTML = `<div class="cbox"><div class="sq" id="sq"></div><div class="lbl">I'm not an alien</div>
+    <div class="logo" id="logo">alienCAPTCHA</div></div>`;
+  el.querySelector('#logo').prepend(icon('🛸', 28));
+  const sq = el.querySelector('#sq');
+  sq.onclick = () => {
+    if (sq.classList.contains('on')) return;
+    sq.classList.add('on'); sq.innerHTML = '<div class="spin"></div>';
+    setMsg('Scanning for antennae...');
+    sfx.loading(1.1);
+    setTimeout(() => { sq.textContent = '✓'; setTimeout(() => g.pass(), 400); }, 1100);
+  };
+}},
+
+/* 2 ------------------------------------------------------- */
+{ name: 'UFO', render(el, g) {
+  el.innerHTML = g.prompt('Select all squares with a', 'UFO') +
+    `<div class="scene"><canvas class="px" id="sc"></canvas><div class="grid" id="gr"></div></div>
+     <div class="row"><span class="note">If there are none, click verify</span><button class="btn">VERIFY</button></div>`;
+  const R = 96, cv = el.querySelector('#sc'); cv.width = cv.height = R;
+  const x = cv.getContext('2d');
+  // sky
+  const sky = x.createLinearGradient(0, 0, 0, R); sky.addColorStop(0, '#9a9a9a'); sky.addColorStop(1, '#f4f4f4');
+  x.fillStyle = sky; x.fillRect(0, 0, R, R);
+  // random UFO position so each attempt differs
+  const ux = rand(18, 70), uy = rand(14, 44), uw = 30, uh = 10;
+  const drawUfo = (c) => {
+    c.beginPath(); c.ellipse(ux, uy - 4, 8, 7, 0, Math.PI, 0); c.fill();
+    c.beginPath(); c.ellipse(ux, uy, uw / 2, uh / 2, 0, 0, Math.PI * 2); c.fill();
+  };
+  // beam
+  x.fillStyle = '#fff'; x.beginPath(); x.moveTo(ux - 6, uy); x.lineTo(ux + 6, uy); x.lineTo(ux + 20, R); x.lineTo(ux - 20, R); x.fill();
+  // hills + houses
+  x.fillStyle = '#222';
+  x.beginPath(); x.moveTo(0, 80); x.quadraticCurveTo(30, 66, 60, 78); x.quadraticCurveTo(80, 86, 96, 74); x.lineTo(96, 96); x.lineTo(0, 96); x.fill();
+  x.fillStyle = '#555'; x.fillRect(8, 70, 12, 10); x.beginPath(); x.moveTo(6, 70); x.lineTo(14, 63); x.lineTo(22, 70); x.fill();
+  x.fillRect(78, 68, 10, 10);
+  // ufo body
+  x.fillStyle = '#111'; drawUfo(x);
+  x.fillStyle = '#eee'; x.beginPath(); x.ellipse(ux, uy - 5, 5, 3.5, 0, Math.PI, 0); x.fill();
+  dither(x, R, R, { gain: 1.1 });
+  // mask for the answer
+  const m = document.createElement('canvas'); m.width = m.height = R;
+  const mx = m.getContext('2d'); mx.fillStyle = '#000'; drawUfo(mx);
+  const md = mx.getImageData(0, 0, R, R).data, cell = R / 4, answer = new Set();
+  for (let cy = 0; cy < 4; cy++) for (let cx = 0; cx < 4; cx++) {
+    let n = 0;
+    for (let yy = cy * cell; yy < (cy + 1) * cell; yy++) for (let xx = cx * cell; xx < (cx + 1) * cell; xx++) if (md[(yy * R + xx) * 4 + 3] > 0) n++;
+    if (n > 6) answer.add(cy * 4 + cx);
+  }
+  const gr = el.querySelector('#gr'), sel = new Set();
+  for (let i = 0; i < 16; i++) {
+    const t = $(`<button class="tile"></button>`);
+    t.onclick = () => { t.classList.toggle('sel'); sel.has(i) ? sel.delete(i) : sel.add(i); };
+    gr.appendChild(t);
+  }
+  el.querySelector('.btn').onclick = () => {
+    const ok = sel.size === answer.size && [...answer].every(i => sel.has(i));
+    ok ? g.pass() : g.fail(sel.size < answer.size ? 'Please select all matching squares.' : 'That is not a UFO. Or is it?');
+  };
+}},
+
+/* 3 ------------------------------------------------------- */
+{ name: 'Human Text', render(el, g) {
+  const word = pick(['EARTHLING', 'OXYGEN', 'MONDAY', 'TAXES', 'SANDWICH', 'GRAVITY']);
+  el.innerHTML = g.prompt('Type the text below', 'Human Language') +
+    `<canvas class="px" id="tx" style="width:100%;border:1px solid var(--ink)"></canvas>
+     <div class="row"><input class="field" id="in" autocomplete="off" placeholder="type here"><button class="btn">VERIFY</button></div>`;
+  const W = 160, H = 48, cv = el.querySelector('#tx'); cv.width = W; cv.height = H;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#fff'; x.fillRect(0, 0, W, H);
+  for (let i = 0; i < 6; i++) {
+    x.strokeStyle = '#999'; x.lineWidth = 1; x.beginPath(); x.moveTo(0, rand(0, H));
+    x.bezierCurveTo(rand(0, W), rand(0, H), rand(0, W), rand(0, H), W, rand(0, H)); x.stroke();
+  }
+  x.textBaseline = 'middle'; x.textAlign = 'center';
+  const step = (W - 20) / word.length;
+  [...word].forEach((ch, i) => {
+    x.save(); x.translate(10 + step * (i + .5), H / 2 + rand(-5, 5)); x.rotate(rand(-.45, .45));
+    x.font = `bold ${Math.round(rand(20, 28))}px Georgia, serif`; x.fillStyle = '#000'; x.fillText(ch, 0, 0); x.restore();
+  });
+  dither(x, W, H);
+  const inp = el.querySelector('#in');
+  const check = () => {
+    const v = inp.value.trim().toUpperCase();
+    if (v === word) g.pass();
+    else if (!v) g.fail('Please type the text.');
+    else if (/[^A-Z]/.test(v)) g.fail('Unrecognized glyphs detected.');
+    else g.fail('Incorrect. Try again, earthling.');
+  };
+  el.querySelector('.btn').onclick = check;
+  inp.onkeydown = e => { if (e.key === 'Enter') check(); };
+  inp.focus();
+}},
+
+/* 4 ------------------------------------------------------- */
+{ name: 'Anatomy', render(el, g) {
+  el.innerHTML = g.prompt('Standard human specification', 'Fingers on ONE hand?') +
+    `<div class="center" id="ic"></div>
+     <div class="row"><input class="field" id="in" type="number" min="0" placeholder="0"><button class="btn">VERIFY</button></div>`;
+  const hand = icon('✋', 32); hand.style.cssText = 'width:96px;height:96px;margin:0 auto'; el.querySelector('#ic').appendChild(hand);
+  const inp = el.querySelector('#in');
+  const check = () => {
+    const v = Number(inp.value);
+    if (inp.value === '') return g.fail('Please count.');
+    if (v === 5) return g.pass();
+    if (v === 10) return g.fail('ONE hand, please.');
+    if (v === 3 || v === 4) return g.fail(`${v}? Our sensors detect one more.`);
+    if (v > 5) return g.fail(`${v} fingers? That is a lot of fingers.`);
+    g.fail('Suspicious anatomy detected.');
+  };
+  el.querySelector('.btn').onclick = check;
+  inp.onkeydown = e => { if (e.key === 'Enter') check(); };
+}},
+
+/* 5 ------------------------------------------------------- */
+{ name: 'Body Temperature', render(el, g) {
+  el.innerHTML = g.prompt('Set the slider to your', 'Body Temperature') +
+    `<div class="big" id="val">0.0°C</div>
+     <div id="tz" style="padding:24px 0;margin:-24px 0;touch-action:none;cursor:ew-resize">
+       <input type="range" id="rg" min="-60" max="160" step="0.1" value="${rand(-60, 160).toFixed(1)}" style="pointer-events:none" tabindex="-1">
+     </div>
+     <div class="row note"><span>-60°C</span><span>160°C</span></div>
+     <div class="row"><span class="note">Tip: arrow keys for fine tuning</span><button class="btn">VERIFY</button></div>`;
+  const rg = el.querySelector('#rg'), val = el.querySelector('#val'), tz = el.querySelector('#tz');
+  const MIN = -60, MAX = 160, clamp = v => Math.max(MIN, Math.min(MAX, v));
+  // target = where the finger says; shown = springy value that chases it (slight overshoot)
+  let target = Number(rg.value), shown = target, vel = 0, dragging = false, jump = false, lastX = 0, raf, last = performance.now();
+  // wide grab zone: hold anywhere around the bar and pull left/right (keeps working outside the bar)
+  tz.onpointerdown = e => {
+    dragging = true; lastX = e.clientX; tz.setPointerCapture(e.pointerId);
+    // tap on the bar -> that spot becomes the target; the spring animates the bar there
+    const r = rg.getBoundingClientRect();
+    jump = e.clientX >= r.left && e.clientX <= r.right;
+    if (jump) target = clamp(MIN + (e.clientX - r.left) / (r.width || 1) * (MAX - MIN));
+  };
+  tz.onpointermove = e => {
+    if (!dragging) return;
+    const w = rg.getBoundingClientRect().width || 1;
+    if (e.clientX !== lastX) jump = false;
+    target = clamp(target + (e.clientX - lastX) / w * (MAX - MIN));
+    lastX = e.clientX;
+  };
+  tz.onpointerup = tz.onpointercancel = () => { dragging = false; };
+  const onKey = e => {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') target = clamp(target - .1);
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') target = clamp(target + .1);
+  };
+  addEventListener('keydown', onKey);
+  const loop = (now) => {
+    const dt = Math.min((now - last) / 1000, .05); last = now;
+    // tap-jumps glide in smoothly (more damping); drags stay a little bouncy
+    vel += (target - shown) * 170 * dt; vel *= Math.exp(-(jump ? 22 : 11) * dt); shown += vel * dt;
+    rg.value = shown;
+    val.textContent = shown.toFixed(1) + '°C';
+    raf = requestAnimationFrame(loop);
+  };
+  raf = requestAnimationFrame(loop);
+  el.querySelector('.btn').onclick = () => {
+    const v = target;
+    if (v >= 35.5 && v <= 38) return g.pass();
+    if (v < 0) return g.fail('You are frozen. Suspicious.');
+    if (v > 100) return g.fail('You are boiling. Very suspicious.');
+    if (v > 38) return g.fail('Fever detected. Or you are from Venus.');
+    g.fail('Too cold for a mammal.');
+  };
+  return () => { cancelAnimationFrame(raf); removeEventListener('keydown', onKey); };
+}},
+
+/* 6 ------------------------------------------------------- */
+{ name: 'Human Food', render(el, g) {
+  const items = shuffle([
+    ['🍕', 1], ['🍎', 1], ['🍞', 1], ['🥕', 1], ['🍙', 1],
+    ['🔋', 0], ['🪨', 0], ['🔩', 0], ['🧲', 0],
+  ]);
+  el.innerHTML = g.prompt('Select all images of', 'Human Food') +
+    `<div class="grid icongrid" id="gr"></div><div class="row"><span class="note">Humans cannot eat metal.</span><button class="btn">VERIFY</button></div>`;
+  const gr = el.querySelector('#gr'), sel = new Set();
+  items.forEach(([ch], i) => {
+    const t = $(`<button class="tile"></button>`); t.appendChild(icon(ch, 28));
+    t.onclick = () => { t.classList.toggle('sel'); sel.has(i) ? sel.delete(i) : sel.add(i); };
+    gr.appendChild(t);
+  });
+  el.querySelector('.btn').onclick = () => {
+    const bad = [...sel].some(i => !items[i][1]);
+    const missing = items.some(([, ok], i) => ok && !sel.has(i));
+    if (bad) return g.fail('You selected something inedible. Hungry?');
+    if (missing) return g.fail('Please select all human food.');
+    g.pass();
+  };
+}},
+
+/* 7 ------------------------------------------------------- */
+{ name: 'Breathing', render(el, g) {
+  el.innerHTML = g.prompt('Humans breathe oxygen.', 'Hold to inhale for 3s') +
+    `<div class="center"><button class="btn" id="hold" style="padding:18px 40px;font-size:18px;touch-action:none">INHALE</button></div>
+     <div class="meter"><i id="bar"></i><div class="tick" style="left:${2.7 / 5 * 100}%"></div><div class="tick" style="left:${3.5 / 5 * 100}%"></div></div>
+     <div class="row note"><span id="sec">0.00s</span><span>release between the lines</span></div>`;
+  const hold = el.querySelector('#hold'), bar = el.querySelector('#bar'), sec = el.querySelector('#sec');
+  let start = 0, raf = 0, shown = 0, vel = 0, lastT = 0, stopBreath = () => {};
+  const tick = () => {
+    const now = performance.now(), t = (now - start) / 1000;
+    const dt = Math.min((now - lastT) / 1000, .05); lastT = now;
+    // gulp of air first: the bar runs ahead early, then settles back to real time (gone by ~2.5s)
+    const lead = .09 * Math.exp(-t * 1.4) * (1 - Math.exp(-t * 14));
+    const goal = Math.min(1, t / 5 + lead);
+    // underdamped spring -> chewy/jelly overshoot
+    vel += (goal - shown) * 260 * dt; vel *= Math.exp(-14 * dt); shown += vel * dt;
+    bar.style.width = Math.max(0, Math.min(shown, 1)) * 100 + '%'; sec.textContent = t.toFixed(2) + 's';
+    if (t > 5) { stop(); return g.fail('You did not need to exhale? Suspicious.'); }
+    raf = requestAnimationFrame(tick);
+  };
+  const stop = () => { cancelAnimationFrame(raf); start = 0; hold.textContent = 'INHALE'; stopBreath(); };
+  hold.onpointerdown = e => {
+    e.preventDefault();
+    start = lastT = performance.now(); shown = 0; vel = 0;
+    stopBreath = sfx.inhale();
+    hold.textContent = 'EXHALE?'; tick();
+  };
+  const release = () => {
+    if (!start) return;
+    const t = (performance.now() - start) / 1000; stop();
+    if (t < 2.7) g.fail(`${t.toFixed(2)}s. Humans need more air than that.`);
+    else if (t <= 3.5) g.pass('BREATHING OK');
+    else g.fail(`${t.toFixed(2)}s. Impressive lungs...`);
+  };
+  hold.onpointerup = release; hold.onpointerleave = release;
+  return () => { cancelAnimationFrame(raf); stopBreath(); };
+}},
+
+/* 8 ------------------------------------------------------- */
+{ name: 'Orientation', render(el, g) {
+  let rot = pick([45, 90, 135, 180, 225, 270, 315]);
+  el.innerHTML = g.prompt('Rotate the human until it', 'Stands Upright') +
+    `<div class="center" style="padding:16px 0"><div id="wrap" style="display:inline-block;transition:transform .2s steps(3)"></div></div>
+     <div class="row"><div><button class="btn ghost" id="l">↺</button> <button class="btn ghost" id="r">↻</button></div><button class="btn" id="v">VERIFY</button></div>`;
+  const wrap = el.querySelector('#wrap'); const h = icon('🧍', 32); h.style.cssText = 'width:128px;height:128px'; wrap.appendChild(h);
+  const upd = () => wrap.style.transform = `rotate(${rot}deg)`; upd();
+  el.querySelector('#l').onclick = () => { rot -= 45; upd(); };
+  el.querySelector('#r').onclick = () => { rot += 45; upd(); };
+  el.querySelector('#v').onclick = () => {
+    const r = ((rot % 360) + 360) % 360;
+    if (r === 0) g.pass();
+    else if (r === 180) g.fail('Humans do not usually stand on their heads.');
+    else g.fail('Humans are not usually diagonal.');
+  };
+}},
+
+/* 9 ------------------------------------------------------- */
+{ name: 'Gravity', render(el, g) {
+  el.innerHTML = g.prompt('Earth has gravity. Catch', '3 Falling Apples') +
+    `<div class="area" id="ar"></div><div class="row note"><span id="cnt">Caught: 0/3</span><span>Newton would be proud</span></div>`;
+  const ar = el.querySelector('#ar'), cnt = el.querySelector('#cnt');
+  const apple = icon('🍎', 24); apple.classList.add('abs'); apple.style.cssText += 'width:48px;height:48px;cursor:pointer';
+  ar.appendChild(apple);
+  let y, x, v, caught = 0, raf, last = performance.now();
+  const drop = () => { y = -50; v = 0; x = rand(10, ar.clientWidth - 58); };
+  drop();
+  const loop = (now) => {
+    const dt = Math.min((now - last) / 1000, .05); last = now;
+    v += 420 * dt * (1 + caught * .35); y += v * dt;
+    if (y > ar.clientHeight) { setMsg('Apple hit the ground. Gravity works.'); drop(); }
+    apple.style.transform = `translate(${x}px, ${y}px)`;
+    raf = requestAnimationFrame(loop);
+  };
+  raf = requestAnimationFrame(loop);
+  // apple fragments burst out where it was caught
+  let bits = [], praf = 0, plast = 0;
+  const burst = (cx, cy) => {
+    for (let k = 0; k < 14; k++) {
+      const s = Math.round(rand(3, 8)), d = document.createElement('i');
+      d.style.cssText = `position:absolute;left:0;top:0;width:${s}px;height:${s}px;pointer-events:none;` +
+        (k % 3 ? 'background:var(--ink)' : 'background:var(--paper);border:1px solid var(--ink)');
+      ar.appendChild(d);
+      const a = rand(0, Math.PI * 2), sp = rand(90, 260);
+      bits.push({ d, x: cx, y: cy, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp - 120, life: 0 });
+    }
+    if (!praf) { plast = performance.now(); praf = requestAnimationFrame(parts); }
+  };
+  const parts = (now) => {
+    const dt = Math.min((now - plast) / 1000, .05); plast = now;
+    bits = bits.filter(b => {
+      b.life += dt; b.vy += 700 * dt; b.x += b.vx * dt; b.y += b.vy * dt;
+      b.d.style.transform = `translate(${b.x}px, ${b.y}px)`;
+      if (b.life > .45) b.d.style.visibility = Math.floor(b.life * 20) % 2 ? 'hidden' : 'visible'; // blink out
+      if (b.life > .7) { b.d.remove(); return false; }
+      return true;
+    });
+    praf = bits.length ? requestAnimationFrame(parts) : 0;
+  };
+  apple.onpointerdown = () => {
+    sfx.crunch();
+    burst(x + 24, y + 24);
+    caught++; cnt.textContent = `Caught: ${caught}/3`;
+    if (caught >= 3) { cancelAnimationFrame(raf); apple.style.visibility = 'hidden'; g.pass(); } else drop();
+  };
+  return () => { cancelAnimationFrame(raf); cancelAnimationFrame(praf); };
+}},
+
+/* 10 ------------------------------------------------------ */
+{ name: 'Emotions', render(el, g) {
+  const faces = shuffle([['😀', 'happy'], ['😢', 'sad'], ['😠', 'angry'], ['😐', 'neutral'], ['😴', 'asleep'], ['😨', 'scared']]);
+  const target = pick(faces.filter(f => f[1] !== 'neutral'));
+  el.innerHTML = g.prompt('Human feelings. Select the face that is', target[1].toUpperCase()) +
+    `<div class="grid icongrid" id="gr"></div><div class="row note"><span>Humans have these. Apparently.</span></div>`;
+  const gr = el.querySelector('#gr');
+  faces.forEach(([ch, name]) => {
+    const t = $(`<button class="tile"></button>`); t.appendChild(icon(ch, 28));
+    t.onclick = () => {
+      if (name === target[1]) return g.pass();
+      t.classList.add('wrong'); setTimeout(() => t.classList.remove('wrong'), 1400);
+      g.fail(`That face is "${name}". Feelings are hard, huh?`);
+    };
+    gr.appendChild(t);
+  });
+}},
+
+/* 11 ------------------------------------------------------ */
+{ name: 'Abduction', render(el, g) {
+  el.innerHTML = g.prompt('Quick! The checkbox is being', 'Abducted') +
+    `<div class="area" id="ar"><div class="beam"></div></div><div class="row note"><span>Check it before it reaches the ship.</span></div>`;
+  const ar = el.querySelector('#ar');
+  const ufo = icon('🛸', 28); ufo.classList.add('abs'); ufo.style.cssText += 'width:84px;height:84px;left:50%;top:-6px;transform:translateX(-50%)';
+  ar.appendChild(ufo);
+  const cb = $(`<div class="cbox abs" style="padding:6px 10px;gap:8px"><div class="sq" style="width:20px;height:20px"></div><span style="font-size:12px">I'm not an alien</span></div>`);
+  ar.appendChild(cb);
+  let y, t = 0, raf, last = performance.now(), done = false;
+  const reset = () => { y = ar.clientHeight - 44; t = 0; };
+  reset();
+  const hum = sfx.hum(); // gets louder / higher as the checkbox nears the ship
+  const loop = (now) => {
+    const dt = Math.min((now - last) / 1000, .05); last = now; t += dt;
+    y -= (30 + t * 18) * dt;
+    const bottom = ar.clientHeight - 44;
+    hum.set(Math.max(0, Math.min(1, (bottom - y) / (bottom - 56))));
+    const x = ar.clientWidth / 2 - cb.offsetWidth / 2 + Math.sin(t * 2.6) * (ar.clientWidth / 2 - cb.offsetWidth / 2 - 8) * Math.min(1, t / 2);
+    cb.style.left = x + 'px'; cb.style.top = y + 'px';
+    cb.style.transform = `rotate(${Math.sin(t * 3.1) * 12}deg)`;
+    if (y < 56) { g.fail('ABDUCTED. Dropping a new checkbox...'); reset(); }
+    raf = requestAnimationFrame(loop);
+  };
+  raf = requestAnimationFrame(loop);
+  cb.querySelector('.sq').onpointerdown = e => {
+    if (done) return; done = true; e.target.textContent = '✓';
+    cancelAnimationFrame(raf); hum.stop(); setTimeout(() => g.pass('RESCUED'), 300);
+  };
+  return () => { cancelAnimationFrame(raf); hum.stop(); };
+}},
+
+/* 12 ------------------------------------------------------ */
+{ name: 'Home Planet', render(el, g) {
+  el.innerHTML = g.prompt('Security question', 'Your Home Planet?') +
+    `<div class="row"><input class="field" id="in" autocomplete="off" placeholder="planet name"><button class="btn">VERIFY</button></div>
+     <p class="note" style="margin-top:8px">Answers are stored in plain text on a moon base.</p>`;
+  const inp = el.querySelector('#in');
+  const check = () => {
+    const raw = inp.value.trim().toLowerCase();
+    const v = raw.replace(/\s+/g, '').replace(/^(the|planet)/, ''); // "The Mars", "planet earth" ...
+    if (['earth', 'terra', '지구', '지구별'].includes(v)) return g.pass();
+    if (!v) return g.fail('Please enter a planet.');
+    // easter egg: every popup calls out the Martian
+    if (['mars', 'marte', '화성'].includes(v)) return g.fail('Nice try, Martian.', [
+      ['MARTIAN DETECTED', 'Nice try, Martian. We saw the red dust.', '0x00MARS'],
+      ['MARS.EXE', 'Home planet: Mars?? Nice try, Martian.', '0xRED4'],
+    ]);
+    if (v === 'pluto') return g.fail('That is not even a planet anymore.');
+    if (['mercury', 'venus', 'jupiter', 'saturn', 'uranus', 'neptune'].includes(v)) return g.fail(`${v[0].toUpperCase() + v.slice(1)}? Unlikely.`);
+    g.fail(`Unregistered planet: "${inp.value.trim()}"`);
+  };
+  el.querySelector('.btn').onclick = check;
+  inp.onkeydown = e => { if (e.key === 'Enter') check(); };
+  inp.focus();
+}},
+
+/* 13: final question ------------------------------------- */
+{ name: 'Final Check', render(el, g) {
+  el.innerHTML = g.prompt('Final verification', 'Are you human?') +
+    `<div class="area" id="ar" style="height:200px"></div>`;
+  const ar = el.querySelector('#ar');
+  const yes = $(`<button class="btn abs">YES, I'M HUMAN</button>`);
+  const no = $(`<button class="btn ghost abs">NO, I'M AN ALIEN</button>`);
+  ar.append(yes, no);
+  requestAnimationFrame(() => {
+    yes.style.left = (ar.clientWidth * .28 - yes.offsetWidth / 2) + 'px'; yes.style.top = '80px';
+    no.style.left = (ar.clientWidth * .72 - no.offsetWidth / 2) + 'px'; no.style.top = '80px';
+  });
+  let dodges = 0;
+  const lines = ['Hm?', 'Slippery.', 'Why is it running?', 'Almost...', 'Are you sure?', 'Fine.'];
+  yes.onpointerenter = () => {
+    if (dodges >= 6) return;
+    setMsg(lines[dodges]); dodges++;
+    yes.style.left = rand(4, ar.clientWidth - yes.offsetWidth - 4) + 'px';
+    yes.style.top = rand(4, ar.clientHeight - yes.offsetHeight - 4) + 'px';
+  };
+  yes.onclick = () => { if (!busy) swap(() => showEnd(el, 'human')); };
+  no.onclick = () => { if (!busy) swap(() => showEnd(el, 'alien')); };
+}},
+
+/* end screen placeholder (content set by showEnd) */
+{ final: true, name: 'Complete', render(el) { showEnd(el, 'human'); } },
+];
+
+function showEnd(el, kind) {
+  cur = LEVELS.length - 1;
+  try { localStorage.setItem('notalien.level', cur); localStorage.setItem('notalien.end', kind); } catch (e) {}
+  scramble(document.getElementById('lvlName'), 'Complete', 600);
+  scramble(document.getElementById('winTitle'), 'C:\\NOT_ALIEN\\RESULT.LOG', 500);
+  document.getElementById('obj').textContent = 'Lvl: --';
+  const human = kind === 'human';
+  const pct = (97 + Math.random() * 2.9).toFixed(1);
+  el.innerHTML = `<div class="center" style="padding:10px 0">
+      <div id="ic" style="display:flex;justify-content:center"></div>
+      <div class="big" style="font-size:26px">${human ? 'VERIFIED HUMAN' : 'WELCOME BACK'}</div>
+      <p>${human ? `You are <b>${pct}%</b> human.<br>The remaining ${(100 - pct).toFixed(1)}% is under review.`
+                 : 'We knew it.<br>The mothership is waiting, commander.'}</p>
+      <div class="row" style="justify-content:center;margin-top:16px"><button class="btn" id="again">PLAY AGAIN</button></div>
+    </div>`;
+  const ic = icon(human ? '🧑' : '👽', 32); ic.style.cssText = 'width:112px;height:112px';
+  el.querySelector('#ic').appendChild(ic);
+  el.querySelector('#again').onclick = () => go(0);
+  setMsg(human ? 'Session terminated. Have a nice human day.' : 'Beaming up...');
+}
+
+let saved = 0;
+try { saved = Number(localStorage.getItem('notalien.level')) || 0; } catch (e) {}
+if (saved === LEVELS.length - 1) {
+  let kind = 'human'; try { kind = localStorage.getItem('notalien.end') || 'human'; } catch (e) {}
+  LEVELS[saved].render = (el) => showEnd(el, kind);
+}
+// boot: window powers on like a CRT
+load(saved);
+busy = true;
+transitionIn().then(() => busy = false);
+</script>
+<script src="../shared/back.js" data-color="#5fa0e6" data-bg="#ffffff"></script>
+</body>
+</html>

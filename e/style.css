@@ -1,0 +1,251 @@
+:root {
+  --bg: #cfccc2;
+  --ink: #013e1f;
+  --muted: #5c7565;
+  --chip: #e6e3d9;
+  --chip-hover: #f2efe6;
+  --line: rgba(1, 62, 31, 0.16);
+  --warn: #bc2d0b;
+  --shadow: 0 6px 18px rgba(1, 62, 31, 0.12);
+  font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body { margin: 0; height: 100%; }
+
+body {
+  overflow: hidden;
+  color: var(--ink);
+  background-color: var(--bg);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button, select, input { font: inherit; color: inherit; }
+[hidden] { display: none !important; }
+
+.app {
+  display: grid;
+  grid-template-rows: 1fr auto;
+  padding-top: calc(10px + env(safe-area-inset-top));
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* ---------- header ---------- */
+.top {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: calc(16px + env(safe-area-inset-top)) 16px 0;
+}
+.title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+.rpm {
+  font-size: 0.74rem;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  color: var(--muted);
+}
+
+/* ---------- stage ---------- */
+.stage-wrap { position: relative; min-height: 0; }
+#stage {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ---------- bottom ---------- */
+.bottom {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px calc(14px + env(safe-area-inset-bottom));
+}
+.hint {
+  margin: 0;
+  min-height: 1.35em;
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: var(--muted);
+  text-align: center;
+  transition: color 0.3s;
+}
+.hint.warn { color: var(--warn); }
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+.group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
+}
+
+.swatch-row { display: flex; gap: 6px; padding: 0 4px; }
+.swatch {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--c);
+  cursor: pointer;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.13);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.swatch:hover { transform: scale(1.08); }
+.swatch[aria-checked="true"] {
+  transform: scale(1.08);
+  box-shadow: 0 0 0 2px var(--chip), 0 0 0 4px var(--c);
+}
+.brush-name {
+  min-width: 4.6em;
+  padding: 0 10px 0 6px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  border: none;
+  background: transparent;
+  font-size: 0.84rem;
+  font-weight: 800;
+  padding: 6px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+}
+select option { color: #222; }
+
+.seg { display: flex; gap: 2px; }
+.seg button, .icon {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: 999px;
+  font-weight: 800;
+}
+.seg button {
+  padding: 6px 11px;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--chip); }
+.icon { width: 34px; height: 34px; padding: 0; font-size: 1rem; }
+select:hover, .seg button:not([aria-pressed="true"]):hover, .icon:hover { background: var(--chip-hover); }
+button:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+
+/* ---------- more panel ---------- */
+.panel {
+  position: fixed;
+  left: 50%;
+  bottom: calc(118px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  width: min(380px, calc(100vw - 24px));
+  padding: 14px 16px;
+  display: grid;
+  gap: 10px;
+  background: var(--chip);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: 0 18px 50px rgba(1, 62, 31, 0.22);
+  z-index: 10;
+}
+.panel .row { display: flex; align-items: center; gap: 10px; }
+.panel .label {
+  width: 58px;
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.panel .seg { background: rgba(1, 62, 31, 0.07); border-radius: 999px; padding: 3px; }
+.panel .value { font-size: 0.8rem; font-weight: 800; min-width: 3.2em; text-align: right; }
+.panel input[type="range"] { flex: 1; accent-color: var(--ink); }
+.buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  border: 1px solid var(--line);
+  background: #f4f2ea;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+.pill:hover { background: #fff; }
+.pill.rec { display: inline-flex; align-items: center; gap: 7px; }
+.pill.rec .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--warn); }
+.pill.rec.on { background: var(--warn); color: #fff; }
+.pill.rec.on .dot { background: #fff; animation: blink 1s infinite; }
+@keyframes blink { 50% { opacity: 0.25; } }
+
+/* ---------- toast ---------- */
+.toast {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--chip);
+  font-size: 0.82rem;
+  font-weight: 800;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+
+@media (max-width: 560px) {
+  .bottom { gap: 8px; }
+  .toolbar { gap: 6px; }
+  .swatch { width: 24px; height: 24px; }
+  .brush-name { display: none; }
+  .panel { bottom: calc(150px + env(safe-area-inset-bottom)); }
+}
+
+/* ---------- bl state: black ground, white line art ---------- */
+body.bl {
+  --bg: #000000;
+  --ink: #ffffff;
+  --muted: #b9b9b9;
+  --chip: #000000;
+  --chip-hover: #1a1a1a;
+  --line: rgba(255, 255, 255, 0.55);
+  --warn: #ffffff;
+  --shadow: none;
+}
+body.bl .group, body.bl .panel, body.bl .pill { background: #000; border-color: var(--line); }
+body.bl .seg button[aria-pressed="true"] { background: #fff; color: #000; }
+body.bl .toast { background: #fff; color: #000; }
+body.bl .swatch { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7); }
+body.bl .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px #000, 0 0 0 4px #fff; }

@@ -1,0 +1,6 @@
+# sound records collected from visitors - they stay on the exhibition PC
+*.jsonl
+archive/
+
+# local tooling
+.claude/

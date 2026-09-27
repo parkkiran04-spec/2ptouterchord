@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Glass Shards — test bench</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@700;800;900&display=swap">
+  <style>
+    :root {
+      --bg: #cfccc2; --ink: #013e1f; --muted: #5c7565; --chip: #e6e3d9; --line: rgba(1,62,31,.16);
+      font-family: 'Nunito', ui-rounded, system-ui, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--ink); overflow: hidden;
+      display: grid; grid-template-rows: 1fr auto; -webkit-tap-highlight-color: transparent;
+    }
+    .stage { position: relative; min-height: 0; }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+    .panel {
+      display: flex; flex-wrap: wrap; gap: 14px; justify-content: center; align-items: center;
+      padding: 12px 16px calc(16px + env(safe-area-inset-bottom));
+    }
+    .ctl {
+      display: flex; align-items: center; gap: 8px; background: var(--chip);
+      border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; box-shadow: 0 6px 18px rgba(1,62,31,.12);
+    }
+    .ctl label { font-size: .72rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    .ctl output { font-size: .8rem; font-weight: 800; min-width: 2.6em; text-align: right; }
+    input[type=range] { accent-color: var(--ink); width: 130px; }
+    button {
+      font: inherit; font-weight: 800; font-size: .8rem; cursor: pointer; color: var(--ink);
+      background: #f4f2ea; border: 1px solid var(--line); border-radius: 999px; padding: 8px 16px;
+    }
+    button:hover { background: #fff; }
+    .hint { width: 100%; text-align: center; font-size: .85rem; font-weight: 800; color: var(--muted); margin: 0; }
+  </style>
+</head>
+<body>
+  <div class="stage"><canvas id="stage"></canvas></div>
+  <div class="panel">
+    <p class="hint" id="hint">click the glass to break it</p>
+    <div class="ctl"><label for="count">Cracks</label><input id="count" type="range" min="5" max="16" step="1" value="10"><output id="countOut">10</output></div>
+    <div class="ctl"><label for="gravity">Gravity</label><input id="gravity" type="range" min="0" max="2.5" step="0.05" value="1"><output id="gravityOut">1.00</output></div>
+    <div class="ctl"><label for="bounce">Bounce</label><input id="bounce" type="range" min="0" max="0.95" step="0.05" value="0.45"><output id="bounceOut">0.45</output></div>
+    <div class="ctl"><label for="spin">Spin</label><input id="spin" type="range" min="-1" max="1" step="0.05" value="0"><output id="spinOut">0.00</output></div>
+    <button id="shakeBtn">Shake</button>
+    <button id="resetBtn">Reset</button>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script src="js/glass.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const canvas = document.getElementById('stage');
+      const ctx = canvas.getContext('2d');
+      const stage = canvas.parentElement;
+      let W = 0, H = 0, dpr = 1, cx = 0, cy = 0, radius = 0;
+      let audioCtx = null;
+      let spin = 0, angle = 0;
+
+      if (!DG.glass.available) {
+        document.getElementById('hint').textContent = 'Matter.js could not load — check your connection';
+        return;
+      }
+      const sim = window.sim = DG.glass.create({ rays: 10 });
+
+      function resize() {
+        const r = stage.getBoundingClientRect();
+        if (r.width < 8 || r.height < 8) return;
+        W = r.width; H = r.height;
+        dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+        canvas.width = Math.round(W * dpr);
+        canvas.height = Math.round(H * dpr);
+        cx = W / 2; cy = H / 2;
+        radius = Math.min(W, H) * 0.45;
+      }
+      window.addEventListener('resize', resize);
+      if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
+      resize();
+
+      // ---- sound needs a gesture first ----
+      function startAudio() {
+        if (audioCtx) return;
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        DG.glass.audio.init(audioCtx);
+        DG.glass.audio.setLevel(0.5);
+        document.getElementById('hint').textContent = 'drag inside the circle to stir the shards';
+      }
+
+      // ---- pointer ----
+      const local = (e) => {
+        const r = canvas.getBoundingClientRect();
+        return { x: (e.clientX - r.left - cx) / radius, y: (e.clientY - r.top - cy) / radius };
+      };
+      let last = null;
+      canvas.addEventListener('pointerdown', (e) => {
+        startAudio();
+        const p = local(e);
+        if (sim.state === 'intact') {
+          sim.shatter(p.x, p.y);
+          document.getElementById('hint').textContent = 'drag inside the circle to stir the shards';
+        } else {
+          sim.impulse(p.x, p.y, 1.6);
+        }
+        last = p;
+        canvas.setPointerCapture(e.pointerId);
+      });
+      canvas.addEventListener('pointermove', (e) => {
+        const p = local(e);
+        const moved = last ? Math.hypot(p.x - last.x, p.y - last.y) : 0;
+        last = p;
+        if (moved > 0.004) sim.impulse(p.x, p.y, Math.min(1, moved * 6));
+      });
+      canvas.addEventListener('pointerup', () => { last = null; });
+
+      // ---- controls ----
+      const bind = (id, out, fn, digits) => {
+        const el = document.getElementById(id), o = document.getElementById(out);
+        const apply = () => {
+          const v = parseFloat(el.value);
+          o.textContent = digits === 0 ? v : v.toFixed(digits);
+          fn(v);
+        };
+        el.addEventListener('input', apply);
+        apply();
+      };
+      bind('count', 'countOut', (v) => sim.setRays(v), 0);
+      bind('gravity', 'gravityOut', (v) => sim.setGravity(v), 2);
+      bind('bounce', 'bounceOut', (v) => sim.setRestitution(v), 2);
+      bind('spin', 'spinOut', (v) => { spin = v; }, 2);
+      document.getElementById('shakeBtn').addEventListener('click', () => { startAudio(); sim.shake(1.2); });
+      document.getElementById('resetBtn').addEventListener('click', () => {
+        sim.reset();
+        document.getElementById('hint').textContent = 'click the glass to break it';
+      });
+
+      // ---- loop ----
+      let last_t = performance.now();
+      function frame(now) {
+        const dt = Math.min(0.05, (now - last_t) / 1000);
+        last_t = now;
+        angle += spin * dt * 1.6;
+        sim.setGravityAngle(angle);
+        sim.update(dt);
+        if (W > 8) {
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          ctx.clearRect(0, 0, W, H);
+          ctx.save();
+          ctx.shadowColor = 'rgba(1,62,31,0.25)';
+          ctx.shadowBlur = 30;
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.fillStyle = '#fff';
+          ctx.fill();
+          ctx.restore();
+          sim.render(ctx, cx, cy, radius);
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+          ctx.strokeStyle = 'rgba(1,62,31,0.5)';
+          ctx.lineWidth = 3;
+          ctx.stroke();
+        }
+        requestAnimationFrame(frame);
+      }
+      requestAnimationFrame(frame);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Make Chord — Outer Chord</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<style>
+  :root{
+    --bg:#191818;
+    --ink:#e8e2d4;
+    --muted:rgba(232,226,212,0.55);
+    --faint:rgba(232,226,212,0.16);
+    --red:#b01d12;
+  }
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{
+    margin:0; width:100%; height:100%; overflow:hidden;
+    background:var(--bg); color:var(--ink);
+    font-family:'Pretendard Variable', Pretendard, 'Inter', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .backdrop{
+    position:fixed; inset:0; pointer-events:none;
+    background:var(--bg) url('../main-assets/background.jpg') center / cover no-repeat;
+    opacity:.45;
+  }
+
+  /* the record, as large as the window allows */
+  .stage{
+    position:fixed; inset:0;
+    display:grid; place-items:center;
+  }
+  canvas{ display:block; }
+
+  /* ---------- info, top right ---------- */
+  .info{
+    position:fixed; right:clamp(20px, 3vw, 56px); top:clamp(20px, 5vh, 52px);
+    text-align:right; z-index:5;
+    max-width:min(360px, 42vw);
+  }
+  .info h1{
+    margin:0;
+    font-family:'Playfair Display', serif; font-style:italic; font-weight:500;
+    font-size:clamp(22px, 2.2vw, 38px); line-height:1.1;
+  }
+  .info .sub{
+    margin-top:6px; font-size:12px; letter-spacing:.3em; color:var(--muted);
+  }
+  .legend{
+    list-style:none; margin:22px 0 0; padding:0;
+    font-family:'Inter', sans-serif; font-size:12px; line-height:2.05;
+    color:var(--muted);
+  }
+  .legend li{ display:flex; justify-content:flex-end; align-items:center; gap:10px; }
+  .legend .n{ color:var(--ink); min-width:3.2em; text-align:right; font-variant-numeric:tabular-nums; }
+  .legend .dot{ width:8px; height:8px; border-radius:50%; flex:none; }
+  .legend li.off{ opacity:.35; }
+  .stats{
+    margin-top:14px; padding-top:12px; border-top:1px solid var(--faint);
+    font-family:'Inter', sans-serif; font-size:11px; letter-spacing:.08em; color:var(--muted);
+    line-height:1.8;
+  }
+
+  /* ---------- now playing, bottom left ---------- */
+  .now{
+    position:fixed; left:clamp(20px, 3vw, 56px); bottom:clamp(20px, 5vh, 52px);
+    z-index:5; font-family:'Inter', sans-serif;
+  }
+  .now .label{ font-size:11px; letter-spacing:.2em; color:var(--muted); text-transform:uppercase; }
+  .now .chord{
+    margin-top:8px;
+    font-family:'Playfair Display', serif; font-size:clamp(28px, 3.2vw, 54px); line-height:1;
+    min-height:1em;
+  }
+  .now .bar{ margin-top:10px; font-size:11px; letter-spacing:.2em; color:var(--muted); font-variant-numeric:tabular-nums; }
+
+  /* ---------- controls, bottom right ---------- */
+  .controls{
+    position:fixed; right:clamp(20px, 3vw, 56px); bottom:clamp(20px, 5vh, 52px);
+    z-index:5; display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
+    max-width:60vw;
+  }
+  .controls button{
+    appearance:none; border:1px solid var(--ink); background:transparent; color:var(--ink);
+    font:500 12px/1 'Inter', sans-serif; letter-spacing:.16em; text-transform:uppercase;
+    padding:13px 18px; border-radius:999px; cursor:pointer;
+    transition:background .2s steps(3, end), color .2s steps(3, end);
+  }
+  .controls button:hover:not(:disabled),
+  .controls button:focus-visible{ background:var(--ink); color:var(--bg); outline:none; }
+  .controls button.primary{ background:var(--red); border-color:var(--red); color:var(--ink); }
+  .controls button.primary:hover:not(:disabled){ background:var(--ink); border-color:var(--ink); color:var(--bg); }
+  .controls button:disabled{ opacity:.3; cursor:default; }
+
+  .message{
+    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
+    z-index:6; text-align:center; max-width:80vw;
+    font-size:15px; line-height:1.9; color:var(--ink);
+    background:rgba(25,24,24,.82); padding:22px 30px; border-radius:6px;
+  }
+  .message[hidden]{ display:none; }
+
+  @media (max-width: 720px){
+    .info{ max-width:60vw; }
+    .legend{ font-size:11px; }
+    .controls{ left:16px; right:16px; max-width:none; justify-content:center; }
+    .now{ bottom:auto; top:auto; left:16px; bottom:96px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="backdrop" aria-hidden="true"></div>
+
+<div class="stage"><canvas id="record" aria-label="지금까지 모인 소리로 만든 음악의 레코드"></canvas></div>
+
+<aside class="info">
+  <h1>Make Chord</h1>
+  <div class="sub">성간 미아를 위한 불협화음</div>
+  <ul class="legend" id="legend"></ul>
+  <div class="stats" id="stats">소리를 모으는 중…</div>
+</aside>
+
+<div class="now" aria-live="polite">
+  <div class="label">Chord</div>
+  <div class="chord" id="chordName">—</div>
+  <div class="bar" id="barCount"></div>
+</div>
+
+<div class="controls">
+  <button type="button" class="primary" id="playBtn" disabled>▶ 재생</button>
+  <button type="button" id="remakeBtn" disabled>↻ 다시 만들기</button>
+  <button type="button" id="saveBtn" disabled>⤓ WAV 저장</button>
+</div>
+
+<div class="message" id="message" hidden></div>
+
+<script>
+(function(){
+'use strict';
+
+/* =====================================================================
+   1. Where the sounds come from
+   ===================================================================== */
+const SOURCES = {
+  cattle: { name: 'Cattle Mutilation',          color: '#e0442c' },
+  e:      { name: 'The Sound of Not the Earth', color: '#7cc9a4' },
+  d:      { name: 'Noctiluca',                  color: '#2fb3c2' },
+  imnota: { name: "I'm Not an Alien",           color: '#7f95ff' },
+  tenshi: { name: 'Tenshi no Tsubasa',          color: '#f0ead8' },
+};
+const ORDER = Object.keys(SOURCES);
+
+const hz2midi = f => 69 + 12 * Math.log2(f / 440);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
+
+/* Every piece logs in its own shape; they all come out of here as
+     { src, time (ms), kind: 'tone' | 'kick' | 'tick' | 'wash',
+       midi, dur (s), vel (0..1), pan (-1..1) | null, sess }
+   or null for things that were not a sound (mute toggles, page start...). */
+const tone = (src, time, midi, dur, vel, pan, sess) =>
+  isFinite(midi) && midi > 0 ? { src, time, kind: 'tone', midi, dur: clamp(num(dur, .4), .05, 6), vel: clamp(num(vel, .5), .02, 1), pan, sess } : null;
+const hit = (src, time, kind, vel, pan, sess) => ({ src, time, kind, vel: clamp(num(vel, .5), .05, 1), pan, sess });
+
+const NORMALIZE = {
+  cattle(e){
+    const time = num(e.t, num(e.st, 0)), sess = e.s;
+    const pan = e.x != null ? clamp(e.x / 960 - 1, -1, 1) : null;
+    const vel = num(e.v, e.by === 'human' ? .75 : .45);
+    switch (e.type) {
+      case 'heartbeat': return hit('cattle', time, 'kick', .8, 0, sess);
+      case 'drop': case 'vessel-flood': case 'beam-noise': case 'capture':
+        return hit('cattle', time, 'wash', .5, pan, sess);
+      case 'audio-start': return null;
+    }
+    return e.f > 0 ? tone('cattle', time, hz2midi(e.f), e.d, vel, pan, sess) : null;
+  },
+  e(e, sessionStart){
+    const time = sessionStart + num(e.t, 0), sess = e.session;
+    switch (e.type) {
+      case 'note':  return tone('e', time, e.midi, num(e.dur, 400) / 1000, e.vel, null, sess);
+      case 'heart': return hit('e', time, 'kick', e.strong ? .9 : .6, 0, sess);
+      case 'glass': return hit('e', time, 'tick', .6, null, sess);
+      case 'shatter': return hit('e', time, 'wash', .8, null, sess);
+    }
+    return null;
+  },
+  d(e){
+    const time = num(e.ts, Date.parse(e.iso) || 0), sess = e.session;
+    const pan = e.x != null ? clamp(e.x * 2 - 1, -1, 1) : null;
+    if (e.src === 'mute' || e.src === 'unmute') return null;
+    if (e.src === 'pulse') return hit('d', time, 'kick', .5, pan, sess);
+    return e.freq > 0 ? tone('d', time, e.midi || hz2midi(e.freq), e.dur, e.vel * 3, pan, sess) : null;
+  },
+  imnota(e){
+    const time = num(e.t, Date.parse(e.rt) || 0), sess = e.s;
+    switch (e.type) {
+      case 'note': return tone('imnota', time, e.midi, e.dur, .6, null, sess);
+      case 'hum': case 'inhale': return hit('imnota', time, 'wash', .4, null, sess);
+      case 'crunch': case 'pass': case 'error': return hit('imnota', time, 'tick', .5, null, sess);
+    }
+    return null;
+  },
+  tenshi(e, sessionStart, sess){
+    const time = sessionStart + num(e.t, 0);
+    const pan = e.x != null ? clamp(e.x * 2 - 1, -1, 1) : null;
+    if (e.f > 0) return tone('tenshi', time, hz2midi(e.f), e.dur, e.vel, pan, sess);
+    if (e.type === 'flood') return hit('tenshi', time, 'wash', .45, pan, sess);
+    return e.type ? hit('tenshi', time, 'tick', .35, pan, sess) : null;
+  },
+};
+
+/* The server copy is the whole archive, so it wins whenever it answers.
+   Opened as a plain file, or on static hosting with no server behind it,
+   each piece falls back to what it kept in this browser. */
+const onServer = location.protocol.startsWith('http');
+
+async function getJSON(url){
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const r = await fetch(url, { cache: 'no-store', signal: ctl.signal });
+    if (!r.ok) throw new Error(r.status);
+    return await r.text();
+  } finally { clearTimeout(timer); }
+}
+const lines = text => text.split('\n').filter(l => l.trim()).map(l => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+const local = key => { try { return JSON.parse(localStorage.getItem(key)); } catch (_) { return null; } };
+
+const LOADERS = {
+  async cattle(){
+    if (onServer) try { return { from: 'server', raw: JSON.parse(await getJSON('../cattlemutilation/api/sounds?since=0&limit=100000000')) }; } catch (_) {}
+    return { from: 'local', raw: local('cattle-mutilation-sound-pending-v1') || [] };
+  },
+  async e(){
+    if (onServer) try { return { from: 'server', raw: JSON.parse(await getJSON('../e/api/sounds')) }; } catch (_) {}
+    const sessions = local('drawn-groove/v1:memory') || [];
+    return { from: 'local', raw: sessions.flatMap(s => (s.events || []).map(ev => ({ ...ev, session: s.session }))) };
+  },
+  async d(){
+    if (onServer) try { return { from: 'server', raw: JSON.parse(await getJSON('../d/api/sounds?date=all')) }; } catch (_) {}
+    return { from: 'local', raw: local('noctiluca.soundlog.v1') || [] };
+  },
+  async imnota(){
+    if (onServer) try {
+      const dates = JSON.parse(await getJSON('../imnota/api/sounds/dates'));
+      const days = await Promise.all(dates.map(d => getJSON('../imnota/api/sounds/' + d).then(lines)));
+      return { from: 'server', raw: days.flat() };
+    } catch (_) {}
+    return { from: 'local', raw: local('notalien.soundmem') || [] };
+  },
+  async tenshi(){
+    if (onServer) try {
+      const raw = lines(await getJSON('../tenshi/memory')).map(l => l.data).filter(Boolean);
+      return { from: 'server', raw, grouped: true };
+    } catch (_) {}
+    const store = local('tenshi.memory.v1');
+    return { from: 'local', raw: (store && store.sessions) || [], grouped: true };
+  },
+};
+
+async function collect(){
+  const all = [], info = {};
+  await Promise.all(ORDER.map(async key => {
+    let got;
+    try { got = await LOADERS[key](); } catch (_) { got = { from: 'none', raw: [] }; }
+    const out = [];
+    const raw = Array.isArray(got.raw) ? got.raw : [];
+    if (key === 'tenshi') {
+      // one entry per upload (server) or per visit (local): {session|id, start, events}
+      for (const g of raw) {
+        const s = g.session || g;
+        const start = Date.parse(s.start) || 0;
+        for (const ev of g.events || []) { const n = NORMALIZE.tenshi(ev, start, s.id); if (n) out.push(n); }
+      }
+    } else if (key === 'e') {
+      for (const ev of raw) { const n = NORMALIZE.e(ev, Date.parse(ev.session) || 0); if (n) out.push(n); }
+    } else {
+      for (const ev of raw) { const n = ev && NORMALIZE[key](ev); if (n) out.push(n); }
+    }
+    info[key] = { from: got.from, count: out.length };
+    all.push(...out);
+  }));
+  all.sort((a, b) => a.time - b.time);
+  return { events: all, info };
+}
+
+/* =====================================================================
+   2. Composing: the archive, read front to back, becomes a row of bars
+   ===================================================================== */
+const BPM = 84;
+const BEAT = 60 / BPM;
+const BAR = BEAT * 4;
+const STEPS = 16;
+const STEP = BAR / STEPS;
+const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+
+function mulberry32(a){
+  return function(){
+    a |= 0; a = a + 0x6D2B79F5 | 0;
+    let t = Math.imul(a ^ a >>> 15, 1 | a);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+// n roughly equal, chronological slices of a list
+function slices(list, n){
+  const out = [];
+  for (let i = 0; i < n; i++) out.push(list.slice(Math.floor(i * list.length / n), Math.floor((i + 1) * list.length / n)));
+  return out;
+}
+// pick up to k items, keeping their order
+function sample(list, k, rnd){
+  if (list.length <= k) return list.slice();
+  const idx = new Set();
+  while (idx.size < k) idx.add(Math.floor(rnd() * list.length));
+  return [...idx].sort((a, b) => a - b).map(i => list[i]);
+}
+const fold = (m, lo, hi) => { while (m < lo) m += 12; while (m > hi) m -= 12; return m; };
+
+function compose(events, seed){
+  const rnd = mulberry32(seed);
+  const tones = events.filter(e => e.kind === 'tone');
+  const hits = events.filter(e => e.kind !== 'tone');
+  if (!tones.length && !hits.length) return null;
+
+  const bars = clamp(Math.round(Math.sqrt(tones.length || hits.length) * 1.6), 8, 32);
+  const toneGroups = slices(tones, bars);
+  const hitGroups = slices(hits, bars);
+  const notes = [], drums = [], barInfo = [];
+  let chord = [0, 4, 7];   // only used if the archive opens with silence
+
+  for (let b = 0; b < bars; b++) {
+    const t0 = b * BAR;
+    const group = toneGroups[b];
+
+    // --- the chord: the pitch classes that sounded most in this stretch ---
+    if (group.length) {
+      const w = new Array(12).fill(0);
+      for (const e of group) w[((Math.round(e.midi) % 12) + 12) % 12] += e.vel * (0.5 + Math.min(e.dur, 2));
+      const top = w.map((v, pc) => [v, pc]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]).slice(0, 3).map(x => x[1]);
+      if (top.length) chord = top;
+    }
+    const root = chord[0];
+    const pad = chord.map(pc => fold(pc + 48, 55, 66)).sort((a, b) => a - b);
+    for (const m of pad) notes.push({ t: t0, dur: BAR * 1.02, midi: m, vel: .5, voice: 'pad', pan: (m - 60) / 12 });
+    notes.push({ t: t0, dur: BEAT * 2.2, midi: fold(root + 36, 33, 44), vel: .8, voice: 'bass', pan: 0 });
+    notes.push({ t: t0 + BEAT * 2, dur: BEAT * 1.8, midi: fold(root + 36, 33, 44), vel: .55, voice: 'bass', pan: 0 });
+
+    // --- the melody: the actual sounds, in the order they were made ---
+    const picked = sample(group, 12, rnd);
+    picked.forEach((e, i) => {
+      let step = Math.floor(i * STEPS / picked.length);
+      if (rnd() < .3) step = Math.min(STEPS - 1, step + 1);
+      const steps = clamp(Math.round(e.dur / STEP), 1, 8);
+      notes.push({
+        t: t0 + step * STEP, dur: steps * STEP, midi: fold(Math.round(e.midi), 55, 88),
+        vel: .3 + e.vel * .7, voice: e.src, src: e.src,
+        pan: e.pan != null ? e.pan * .8 : (rnd() * 2 - 1) * .6,
+      });
+    });
+
+    // --- percussion: heartbeats land on the beat, glass on the offbeats ---
+    sample(hitGroups[b], 8, rnd).forEach((e, i, arr) => {
+      let step = Math.floor(i * STEPS / arr.length);
+      if (e.kind === 'kick') step = Math.round(step / 4) * 4 % STEPS;
+      else if (e.kind === 'tick') step = (Math.floor(step / 2) * 2 + 2) % STEPS;
+      else step = step < 8 ? 0 : 8;
+      drums.push({ t: t0 + step * STEP, kind: e.kind, vel: e.vel, pan: e.pan != null ? e.pan * .7 : 0, src: e.src });
+    });
+
+    const from = {};
+    for (const e of group) from[e.src] = (from[e.src] || 0) + 1;
+    barInfo.push({ t: t0, chord: chord.slice(), from });
+  }
+
+  return { bars, notes, drums, barInfo, length: bars * BAR, tail: 3.5 };
+}
+
+/* =====================================================================
+   3. Sound: one small synth per piece, built fresh for every playback
+   ===================================================================== */
+const m2f = m => 440 * Math.pow(2, (m - 69) / 12);
+
+function buildGraph(ctx){
+  const master = ctx.createGain(); master.gain.value = .7;
+  const comp = ctx.createDynamicsCompressor();
+  comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = .01; comp.release.value = .25;
+  master.connect(comp); comp.connect(ctx.destination);
+
+  // a long, dark room made from decaying noise
+  const len = Math.floor(ctx.sampleRate * 3.2);
+  const ir = ctx.createBuffer(2, len, ctx.sampleRate);
+  for (let c = 0; c < 2; c++) {
+    const d = ir.getChannelData(c);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
+  }
+  const verb = ctx.createConvolver(); verb.buffer = ir;
+  const verbIn = ctx.createGain(); verbIn.gain.value = .32;
+  const verbTone = ctx.createBiquadFilter(); verbTone.type = 'lowpass'; verbTone.frequency.value = 3200;
+  verbIn.connect(verbTone); verbTone.connect(verb); verb.connect(master);
+
+  const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const nd = noise.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+
+  return { master, verbIn, noise };
+}
+
+// every voice ends in: gain envelope -> panner -> dry + reverb send
+function outlet(ctx, g, pan, send){
+  const p = ctx.createStereoPanner(); p.pan.value = clamp(pan || 0, -1, 1);
+  const env = ctx.createGain(); env.gain.value = 0;
+  env.connect(p); p.connect(g.master);
+  const s = ctx.createGain(); s.gain.value = send; p.connect(s); s.connect(g.verbIn);
+  return env;
+}
+function adsr(param, t, dur, peak, a, r){
+  param.setValueAtTime(0, t);
+  param.linearRampToValueAtTime(peak, t + a);
+  param.setValueAtTime(peak, t + Math.max(a, dur));
+  param.exponentialRampToValueAtTime(0.0001, t + Math.max(a, dur) + r);
+  return t + Math.max(a, dur) + r + .05;
+}
+function osc(ctx, type, f, t, end, dest, detune){
+  const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
+  if (detune) o.detune.value = detune;
+  o.connect(dest); o.start(t); o.stop(end);
+  return o;
+}
+
+const VOICES = {
+  pad(ctx, g, n, t){
+    const env = outlet(ctx, g, n.pan * .5, .55);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = .4;
+    lp.connect(env);
+    const end = adsr(env.gain, t, n.dur, .045 * n.vel, .7, 1.2);
+    osc(ctx, 'sawtooth', m2f(n.midi), t, end, lp, -7);
+    osc(ctx, 'sawtooth', m2f(n.midi), t, end, lp, 7);
+  },
+  bass(ctx, g, n, t){
+    const env = outlet(ctx, g, 0, .08);
+    const end = adsr(env.gain, t, n.dur * .6, .32 * n.vel, .01, .5);
+    osc(ctx, 'sine', m2f(n.midi), t, end, env);
+    const h = ctx.createGain(); h.gain.value = .25; h.connect(env);
+    osc(ctx, 'triangle', m2f(n.midi + 12), t, end, h);
+  },
+  // Cattle Mutilation: a raw, filtered saw pluck
+  cattle(ctx, g, n, t){
+    const env = outlet(ctx, g, n.pan, .3);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 6;
+    lp.frequency.setValueAtTime(900 + n.vel * 3200, t);
+    lp.frequency.exponentialRampToValueAtTime(380, t + n.dur + .2);
+    lp.connect(env);
+    const end = adsr(env.gain, t, n.dur * .5, .13 * n.vel, .005, .35);
+    osc(ctx, 'sawtooth', m2f(n.midi), t, end, lp);
+  },
+  // The Sound of Not the Earth: a struck, bell-like FM tone
+  e(ctx, g, n, t){
+    const env = outlet(ctx, g, n.pan, .45);
+    const end = adsr(env.gain, t, .02, .16 * n.vel, .004, Math.max(.8, n.dur * 1.5));
+    const f = m2f(n.midi);
+    const car = osc(ctx, 'sine', f, t, end, env);
+    const mg = ctx.createGain();
+    mg.gain.setValueAtTime(f * 2.2, t); mg.gain.exponentialRampToValueAtTime(f * .05, t + .9);
+    mg.connect(car.frequency);
+    osc(ctx, 'sine', f * 3.5, t, end, mg);
+  },
+  // Noctiluca: a slow, glassy triangle with an octave shimmer
+  d(ctx, g, n, t){
+    const env = outlet(ctx, g, n.pan, .6);
+    const end = adsr(env.gain, t, n.dur, .12 * n.vel, .09, .9);
+    osc(ctx, 'triangle', m2f(n.midi), t, end, env);
+    const h = ctx.createGain(); h.gain.value = .18; h.connect(env);
+    osc(ctx, 'sine', m2f(n.midi + 12), t, end, h, 4);
+  },
+  // I'm Not an Alien: an 8-bit square
+  imnota(ctx, g, n, t){
+    const env = outlet(ctx, g, n.pan, .2);
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3600;
+    lp.connect(env);
+    const end = adsr(env.gain, t, n.dur * .8, .06 * n.vel, .003, .08);
+    osc(ctx, 'square', m2f(n.midi), t, end, lp);
+  },
+  // Tenshi no Tsubasa: two soft sines with a slow vibrato, like a voice
+  tenshi(ctx, g, n, t){
+    const env = outlet(ctx, g, n.pan, .7);
+    const end = adsr(env.gain, t, n.dur, .1 * n.vel, .16, 1.1);
+    const f = m2f(n.midi);
+    const a = osc(ctx, 'sine', f, t, end, env, -5);
+    const b = osc(ctx, 'sine', f, t, end, env, 6);
+    const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
+    const depth = ctx.createGain(); depth.gain.value = f * .006;
+    lfo.connect(depth); depth.connect(a.frequency); depth.connect(b.frequency);
+    lfo.start(t); lfo.stop(end);
+  },
+};
+
+const DRUMS = {
+  kick(ctx, g, d, t){
+    const env = outlet(ctx, g, d.pan, .05);
+    const end = adsr(env.gain, t, .02, .55 * d.vel, .002, .32);
+    const o = osc(ctx, 'sine', 120, t, end, env);
+    o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(42, t + .28);
+  },
+  tick(ctx, g, d, t){
+    const env = outlet(ctx, g, d.pan, .35);
+    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5200;
+    hp.connect(env);
+    const end = adsr(env.gain, t, .005, .16 * d.vel, .001, .06);
+    const s = ctx.createBufferSource(); s.buffer = g.noise; s.connect(hp); s.start(t); s.stop(end);
+  },
+  wash(ctx, g, d, t){
+    const env = outlet(ctx, g, d.pan, .8);
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
+    bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(2400, t + 1.4);
+    bp.connect(env);
+    const end = adsr(env.gain, t, .9, .05 * d.vel, .5, .9);
+    const s = ctx.createBufferSource(); s.buffer = g.noise; s.loop = true; s.connect(bp); s.start(t); s.stop(end);
+  },
+};
+
+function schedule(ctx, song, at){
+  const g = buildGraph(ctx);
+  for (const n of song.notes) (VOICES[n.voice] || VOICES.d)(ctx, g, n, at + n.t);
+  for (const d of song.drums) DRUMS[d.kind](ctx, g, d, at + d.t);
+}
+
+/* =====================================================================
+   4. The record: the whole piece as one spiral groove
+   ===================================================================== */
+const canvas = document.getElementById('record');
+const g2 = canvas.getContext('2d');
+const OUTER = .94, INNER = .36;     // groove band, as fractions of the radius
+const NEEDLE = -Math.PI / 4;        // the needle sits at half past one
+let R = 100, dpr = 1;
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const size = Math.floor(Math.min(window.innerWidth * .62, window.innerHeight * .84));
+  R = size / 2;
+  canvas.style.width = canvas.style.height = size + 'px';
+  canvas.width = canvas.height = Math.floor(size * dpr);
+  draw();
+}
+
+function draw(){
+  const ctx = g2, size = canvas.width / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+  const cx = size / 2, cy = size / 2;
+  const now = playing ? playTime() : -1;
+  const bars = song ? song.bars : 16;
+  const band = (OUTER - INNER) * R / bars;
+  const frac = now >= 0 ? (now / BAR) % 1 : 0;
+  const rot = NEEDLE + 2 * Math.PI * frac + (now < 0 ? idleSpin : 0);
+
+  // disc
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fillStyle = '#0c0c0c'; ctx.fill();
+  ctx.rotate(rot);
+  ctx.lineWidth = 1;
+  for (let b = 0; b <= bars; b++) {
+    ctx.beginPath(); ctx.arc(0, 0, OUTER * R - b * band, 0, Math.PI * 2);
+    ctx.strokeStyle = 'rgba(232,226,212,0.07)'; ctx.stroke();
+  }
+  // sheen
+  ctx.fillStyle = 'rgba(232,226,212,0.035)';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, -1.9, -1.1); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, 1.25, 2.05); ctx.fill();
+
+  // notes, laid along the groove
+  if (song) {
+    ctx.lineCap = 'round';
+    for (const n of song.notes) {
+      if (!n.src) continue;
+      const b = Math.floor(n.t / BAR + 1e-6);
+      const s = (n.t - b * BAR) / BAR;
+      const len = Math.min(n.dur / BAR, 1 - s);
+      const r = OUTER * R - b * band - band * (.15 + .7 * (1 - (n.midi - 55) / 33));
+      const a0 = -s * 2 * Math.PI, a1 = -(s + Math.max(len, .012)) * 2 * Math.PI;
+      const played = now >= n.t, sounding = played && now < n.t + n.dur;
+      ctx.beginPath(); ctx.arc(0, 0, r, a1, a0);
+      ctx.strokeStyle = SOURCES[n.src].color;
+      ctx.globalAlpha = sounding ? 1 : played ? .8 : .32;
+      ctx.lineWidth = Math.max(1.2, band * (sounding ? .5 : .28));
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // label
+  ctx.beginPath(); ctx.arc(0, 0, INNER * R * .86, 0, Math.PI * 2); ctx.fillStyle = '#b01d12'; ctx.fill();
+  ctx.fillStyle = '#e8e2d4';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.font = `italic 500 ${Math.round(R * .085)}px "Playfair Display", serif`;
+  ctx.fillText('OUTER', 0, -R * .045);
+  ctx.fillText('CHORD', 0, R * .05);
+  ctx.beginPath(); ctx.arc(0, 0, R * .018, 0, Math.PI * 2); ctx.fillStyle = '#0c0c0c'; ctx.fill();
+  ctx.restore();
+
+  // tonearm: from outside the top-right to the needle's place in the groove
+  const rr = now >= 0 ? OUTER * R - (now / BAR) * band : R * 1.02;
+  const tipX = cx + Math.cos(NEEDLE) * rr, tipY = cy + Math.sin(NEEDLE) * rr;
+  const pivX = cx + R * 1.02, pivY = cy - R * 1.02;
+  ctx.strokeStyle = '#e8e2d4'; ctx.lineWidth = Math.max(2, R * .014); ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(pivX, pivY);
+  ctx.quadraticCurveTo(pivX - R * .05, (pivY + tipY) / 2, tipX, tipY); ctx.stroke();
+  ctx.beginPath(); ctx.arc(pivX, pivY, R * .04, 0, Math.PI * 2); ctx.fillStyle = '#e8e2d4'; ctx.fill();
+  ctx.beginPath(); ctx.arc(tipX, tipY, R * .016, 0, Math.PI * 2); ctx.fillStyle = '#b01d12'; ctx.fill();
+}
+
+/* =====================================================================
+   5. Page
+   ===================================================================== */
+const $ = id => document.getElementById(id);
+const playBtn = $('playBtn'), remakeBtn = $('remakeBtn'), saveBtn = $('saveBtn');
+let events = [], song = null, seed = 1;
+let ac = null, startAt = 0, playing = false, idleSpin = 0;
+
+const playTime = () => ac ? ac.currentTime - startAt : 0;
+const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+
+function showMessage(text){ const m = $('message'); m.textContent = text; m.hidden = !text; }
+
+function renderLegend(info){
+  $('legend').innerHTML = ORDER.map(k => {
+    const c = info[k] ? info[k].count : 0;
+    return `<li class="${c ? '' : 'off'}"><span>${SOURCES[k].name}</span><span class="n">${c}</span><span class="dot" style="background:${SOURCES[k].color}"></span></li>`;
+  }).join('');
+}
+
+function renderStats(info){
+  const sessions = new Set(events.map(e => e.src + ':' + e.sess)).size;
+  const froms = [...new Set(Object.values(info).map(i => i.from))];
+  const where = froms.includes('server') ? '전시 서버 기록' : '이 브라우저 기록';
+  $('stats').innerHTML = `소리 ${events.length.toLocaleString()}개 · 체험 ${sessions}회<br>` +
+    (song ? `${song.bars}마디 · ${BPM} BPM · ${fmt(song.length)}` : '') + `<br>${where}`;
+}
+
+function setNow(){
+  if (!song) return;
+  const t = playing ? playTime() : 0;
+  const b = clamp(Math.floor(t / BAR), 0, song.bars - 1);
+  $('chordName').textContent = playing ? song.barInfo[b].chord.map(pc => NAMES[pc]).join(' · ') : song.barInfo[0].chord.map(pc => NAMES[pc]).join(' · ');
+  $('barCount').textContent = `${String(b + 1).padStart(2, '0')} / ${String(song.bars).padStart(2, '0')}`;
+}
+
+function make(){
+  song = compose(events, seed);
+  setNow();
+  draw();
+}
+
+async function play(){
+  stop();
+  const AC = window.AudioContext || window.webkitAudioContext;
+  ac = new AC();
+  startAt = ac.currentTime + .15;
+  schedule(ac, song, startAt);
+  playing = true;
+  playBtn.textContent = '■ 정지';
+}
+function stop(){
+  if (ac) { try { ac.close(); } catch (_) {} ac = null; }
+  playing = false;
+  playBtn.textContent = '▶ 재생';
+  setNow();
+  draw();
+}
+
+playBtn.addEventListener('click', () => (playing ? stop() : play()));
+remakeBtn.addEventListener('click', () => {
+  const was = playing;
+  stop();
+  seed = (Math.random() * 2 ** 31) | 0;
+  make();
+  if (was) play();
+});
+
+// render the same schedule offline and hand it over as a 16-bit WAV
+saveBtn.addEventListener('click', async () => {
+  saveBtn.disabled = true;
+  const label = saveBtn.textContent;
+  saveBtn.textContent = '만드는 중…';
+  try {
+    const rate = 44100;
+    const off = new OfflineAudioContext(2, Math.ceil((song.length + song.tail) * rate), rate);
+    schedule(off, song, 0);
+    const buf = await off.startRendering();
+    const blob = toWav(buf);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `outer-chord-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}.wav`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  } catch (err) {
+    showMessage('파일을 만들지 못했습니다: ' + err.message);
+    setTimeout(() => showMessage(''), 3000);
+  }
+  saveBtn.textContent = label;
+  saveBtn.disabled = false;
+});
+
+function toWav(buf){
+  const ch = buf.numberOfChannels, len = buf.length, rate = buf.sampleRate;
+  const data = new DataView(new ArrayBuffer(44 + len * ch * 2));
+  const str = (o, s) => { for (let i = 0; i < s.length; i++) data.setUint8(o + i, s.charCodeAt(i)); };
+  str(0, 'RIFF'); data.setUint32(4, 36 + len * ch * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); data.setUint32(16, 16, true); data.setUint16(20, 1, true); data.setUint16(22, ch, true);
+  data.setUint32(24, rate, true); data.setUint32(28, rate * ch * 2, true); data.setUint16(32, ch * 2, true); data.setUint16(34, 16, true);
+  str(36, 'data'); data.setUint32(40, len * ch * 2, true);
+  const chans = []; for (let c = 0; c < ch; c++) chans.push(buf.getChannelData(c));
+  let o = 44;
+  for (let i = 0; i < len; i++) for (let c = 0; c < ch; c++) {
+    const s = clamp(chans[c][i], -1, 1);
+    data.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2;
+  }
+  return new Blob([data], { type: 'audio/wav' });
+}
+
+/* The record turns on the same kind of hand-cranked clock as the index:
+   frames held for a slightly different time each, around 24 a second. */
+let nextFrame = 0;
+function loop(ts){
+  if (ts >= nextFrame) {
+    nextFrame = ts + (1000 / 24) * (1 + (Math.random() * 2 - 1) * .15);
+    if (!playing) idleSpin += .012;
+    if (playing && playTime() > song.length + song.tail) stop();
+    setNow();
+    draw();
+  }
+  requestAnimationFrame(loop);
+}
+
+window.addEventListener('resize', resize);
+resize();
+requestAnimationFrame(loop);
+
+/* Once the song is made the archive has done its job: everything collected
+   is cleared so the index starts over from nothing — no record at the
+   bottom, no sounds waiting — for the next person. The song itself stays in
+   this page, so it can still be played, remade and saved from here.
+   On the server nothing is lost: the files move to archive/<time>/. */
+const LOCAL_KEYS = [
+  'cattle-mutilation-sound-pending-v1',
+  'drawn-groove/v1:memory',
+  'noctiluca.soundlog.v1', 'noctiluca.soundqueue.v1',
+  'notalien.soundmem', 'notalien.soundmem.pending',
+  'tenshi.memory.v1',
+];
+async function resetAll(){
+  let archived = null;
+  if (onServer) {
+    try {
+      const r = await fetch('../api/reset', { method: 'POST' });
+      if (r.ok) archived = (await r.json()).archive;
+    } catch (_) { /* static hosting: only this browser's copies to clear */ }
+  }
+  for (const k of LOCAL_KEYS) { try { localStorage.removeItem(k); } catch (_) {} }
+  try { sessionStorage.removeItem('xg.visited'); } catch (_) {}
+  return archived;
+}
+
+(async () => {
+  const { events: evs, info } = await collect();
+  events = evs;
+  renderLegend(info);
+  if (!events.length) {
+    await resetAll();
+    renderStats(info);
+    showMessage('아직 모인 소리가 없습니다.\n작품을 체험한 뒤 다시 와 주세요.');
+    $('message').style.whiteSpace = 'pre-line';
+    return;
+  }
+  seed = (Math.random() * 2 ** 31) | 0;
+  make();
+  renderStats(info);
+  [playBtn, remakeBtn, saveBtn].forEach(b => (b.disabled = false));
+  await resetAll();
+  $('stats').insertAdjacentHTML('beforeend', '<br>이 곡을 만든 소리는 비워졌습니다');
+})();
+
+})();
+</script>
+<script src="../shared/back.js" data-visit="0" data-color="#e8e2d4"></script>
+</body>
+</html>

@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no">
+<title>Stack — Isometric Index</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+<style>
+  /* The display face used on the panels. Drop the file in at this path and
+     the titles pick it up; until then they fall back to Playfair Display. */
+  @font-face{
+    font-family:'Nomark';
+    src: url('./fonts/nomark.woff2') format('woff2'),
+         url('./fonts/nomark.otf')   format('opentype');
+    font-display: swap;
+  }
+  :root{
+    --bg: #191818;
+    --ink: #e8e2d4;
+    --muted: rgba(232,226,212,0.55);
+    --line: rgba(232,226,212,0.12);
+    --red: #b01d12;
+  }
+  *,*::before,*::after{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    overflow:hidden;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app{ position:fixed; inset:0; }
+
+  /* The ground behind the fan: the finished "end" composition (glass,
+     stars, bubbles, pixels) at the 16:9 the artwork was drawn in, cropped
+     to cover any other window shape. */
+  .backdrop{
+    position:fixed; inset:0; z-index:0;
+    background: var(--bg) url('main-assets/background.jpg') center / cover no-repeat;
+    pointer-events:none;
+  }
+
+  /* ---------- Left brand panel ---------- */
+  .panel-left{
+    position:fixed; left:56px; top:52px; z-index:30;
+    max-width:280px;
+    /* opacity is driven by GSAP, which is already stop-motion stepped */
+  }
+  .panel-left .logo{
+    display:block;
+    width: clamp(200px, 17vw, 330px);
+    height:auto;
+  }
+  .panel-left p{
+    margin:18px 0 0;
+    font-size:13px;
+    line-height:1.7;
+    color: var(--muted);
+    font-weight:400;
+  }
+
+  /* bottom-left hint */
+  .hint{
+    position:fixed; left:56px; bottom:44px; z-index:30;
+    display:flex; align-items:center; gap:10px;
+    font-size:11px; letter-spacing:1.4px; text-transform:uppercase;
+    color: var(--muted);
+    /* opacity is driven by GSAP, which is already stop-motion stepped */
+  }
+  .hint .dot{
+    width:6px; height:6px; border-radius:50%;
+    background: var(--ink);
+    /* stepped so the blink lands on the same beat as everything else */
+    animation: pulse 1.8s steps(11, end) infinite;
+  }
+  @keyframes pulse{
+    0%,100%{ opacity:.25; transform:scale(0.8); }
+    50%{ opacity:1; transform:scale(1); }
+  }
+
+  /* ---------- Right meta index ---------- */
+  /* Top-right, out of the fan's path. The arc sweeps through the bottom
+     corners, so index type parked down there gets run over by the cards. */
+  .panel-right{
+    position:fixed; right:56px; top:52px; z-index:30;
+    text-align:right;
+    /* opacity is driven by GSAP, which is already stop-motion stepped */
+  }
+  .panel-right .m-index{
+    font-family:'Inter',monospace;
+    font-size:11px;
+    letter-spacing:2px;
+    color: var(--muted);
+    margin-bottom:6px;
+  }
+  .panel-right .m-title{
+    font-family:'Playfair Display', serif;
+    font-style:italic;
+    font-weight:500;
+    font-size:19px;
+    line-height:1.2;
+  }
+  .panel-right .m-desc{
+    margin-top:4px;
+    font-size:12px;
+    color: var(--muted);
+  }
+
+  /* ---------- Detail view ----------
+     What a card opens into. The solid field grows out of the middle and
+     fills the viewport; the card itself keeps its size and slides over to
+     the left, so the artwork stays artwork instead of becoming the page.
+     Positions are all viewport fractions, taken off the panel layouts. */
+  .detail{
+    position:fixed; inset:0;
+    pointer-events:none;
+    /* Where each text block's line box starts. Horizontal positions and
+       type sizes are exact to the panel; these two are the only values
+       that depend on the display face's own metrics, so nudge them once
+       the real Nomark file is in place. */
+    --title-top: 26.27%;
+    --body-top: 45.8%;
+  }
+  .detail__fill{
+    position:absolute; inset:0;
+    z-index:15;
+    background:#C0341A;
+    transform:scale(0);
+    will-change:transform;
+  }
+  .detail__content{
+    position:absolute; inset:0;
+    z-index:25;
+    opacity:0;
+    color:#E8E2D4;
+  }
+  /* Sizes are fractions of the viewport width, so the composition is
+     pixel-identical to the 1920×1080 panel and stays in proportion at any
+     other window size. Percentages in the comments are the panel values. */
+  .detail__title{
+    position:absolute;
+    left:43.54%;            /* 836px */
+    top:var(--title-top);
+    right:6%;
+    margin:0;
+    font-family:'Nomark', 'Playfair Display', serif;
+    font-weight:500;
+    font-size:4.063vw;      /* 78pt */
+    line-height:1.18;       /* ≈92px between the two lines */
+    text-transform:uppercase;
+  }
+  .detail__body{
+    position:absolute;
+    left:51.52%;            /* 989px */
+    top:var(--body-top);
+    right:6%;
+    font-family:'Pretendard Variable', Pretendard, 'Inter', sans-serif;
+    font-weight:500;        /* Medium */
+    font-size:1.25vw;       /* 24pt */
+    line-height:2.1667;     /* 52pt leading */
+    letter-spacing:-0.075em;/* tracking -75 */
+  }
+  .detail__body span{ display:block; }
+
+  /* The arrow is the way out of the detail view — nothing navigates on its
+     own any more. It only accepts clicks once the view has actually landed,
+     otherwise it would be a live target while still invisible. */
+  .detail__go{
+    position:absolute;
+    right:5.63%;            /* 108px */
+    bottom:9.9%;            /* 107px */
+    width:5.99vw;           /* 115px */
+    height:5.99vw;
+    padding:0;
+    border:0;
+    background:none;
+    color:inherit;
+    cursor:pointer;
+    pointer-events:none;
+    /* transform only — opacity here belongs to GSAP, and a CSS transition
+       on the same property would fight it during the reveal */
+    transition: transform .2s steps(3, end);
+  }
+  .detail.is-open .detail__go{ pointer-events:auto; }
+  .detail__go:hover,
+  .detail__go:focus-visible{
+    transform: translate(7%, 7%);
+  }
+  .detail__go:focus-visible{ outline:2px solid currentColor; outline-offset:8px; }
+  .detail__arrow{
+    display:block;
+    width:100%; height:100%;
+    stroke:currentColor;
+    stroke-width:2;
+    fill:none;
+  }
+
+  /* ---------- Stage ---------- */
+  .scene{
+    position:fixed; inset:0;
+    z-index:10;
+    touch-action: none;
+    cursor: grab;
+  }
+  .scene.dragging{ cursor: grabbing; }
+  .stack{
+    position:absolute; inset:0;
+  }
+  .card{
+    position:absolute;
+    top:50%; left:50%;
+    width: clamp(200px, 20vw, 300px);
+    height: clamp(200px, 20vw, 300px);
+    aspect-ratio: 1 / 1;
+    will-change: transform, opacity;
+  }
+  .card-inner{
+    position:absolute; inset:0;
+    border-radius:4px;
+    overflow:hidden;
+    border:1px solid rgba(255,255,255,0.55);
+    box-shadow:
+      0 30px 70px -18px rgba(20,20,15,0.35),
+      0 6px 18px -6px rgba(20,20,15,0.12);
+    will-change: transform, border-radius;
+    backface-visibility:hidden;
+  }
+  .card__thumb{
+    position:absolute; inset:0;
+    background: var(--bg-img);
+  }
+  /* ---------- make chord ----------
+     A record that turns up at the bottom of the index once a visitor has
+     been through at least one piece; it leads to the page that plays
+     everything collected so far back as music. */
+  .chord-btn{
+    position:fixed; left:50%; bottom:clamp(18px, 3.2vh, 40px); z-index:30;
+    width:clamp(96px, 7.6vw, 146px); height:clamp(96px, 7.6vw, 146px);
+    margin-left:calc(clamp(96px, 7.6vw, 146px) / -2);
+    padding:0; border:0; border-radius:50%;
+    background:none; cursor:pointer; color:var(--ink);
+    display:none;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .chord-btn.is-shown{ display:block; }
+  .chord-btn svg{ display:block; width:100%; height:100%; overflow:visible; }
+  .chord-btn .disc{
+    transform-origin:50% 50%;
+    /* 33⅓ rpm, stepped like everything else on the page */
+    animation: spin 1.8s steps(24, end) infinite;
+  }
+  .chord-btn:hover .disc,
+  .chord-btn:focus-visible .disc{ animation-duration: .9s; }
+  .chord-btn:focus-visible{ outline:2px solid var(--ink); outline-offset:6px; }
+  .chord-btn .shadow{ filter: drop-shadow(0 14px 22px rgba(0,0,0,0.55)); }
+  @keyframes spin{ to{ transform: rotate(360deg); } }
+  /* on a narrow window the bottom-left hint would run under the record */
+  @media (max-width: 1100px){
+    body.has-chord .hint{ bottom: calc(clamp(96px, 7.6vw, 146px) + clamp(18px, 3.2vh, 40px) + 18px); }
+  }
+
+  /* Once a card is opening, the stage is raised above the colour field so
+     the artwork sits on top of it — but that also puts the stack's own
+     transparent full-screen box over the detail view. Nothing in the stage
+     is interactive any more at that point, so it stops taking clicks and
+     lets them through to the arrow. */
+  .scene.activated{ cursor: default; pointer-events: none; }
+  /* ...except the opened card, which takes a double click through to the site */
+  .scene.activated .card.is-live{ pointer-events: auto; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <div class="backdrop" aria-hidden="true"></div>
+
+  <div class="panel-left">
+    <h1 style="margin:0"><img class="logo" src="main-assets/logo.png" alt="OUTER CHORD — 성간 미아를 위한 불협화음"></h1>
+    <p>드래그, 휠, 스와이프로 프로젝트를 탐색하세요. 카드를 더블클릭하면 상세 페이지로 이동합니다.</p>
+  </div>
+
+  <div class="hint">
+    <span class="dot"></span>
+    <span>Drag / Scroll — Double Click to Open</span>
+  </div>
+
+  <div class="panel-right">
+    <div class="m-index" id="metaIndex">01</div>
+    <div class="m-title" id="metaTitle">—</div>
+    <div class="m-desc" id="metaDesc">—</div>
+  </div>
+
+  <!-- the view a card opens into; text and artwork get dropped in later -->
+  <div class="detail" id="detail" aria-hidden="true">
+    <div class="detail__fill" id="detailFill"></div>
+    <div class="detail__content" id="detailContent">
+      <h2 class="detail__title" id="detailTitle"></h2>
+      <div class="detail__body" id="detailBody"></div>
+      <button class="detail__go" id="detailGo" type="button" aria-label="사이트로 이동">
+        <svg class="detail__arrow" viewBox="0 0 100 100" aria-hidden="true">
+          <path d="M18 18 L82 82 M82 40 L82 82 L40 82" />
+        </svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="scene" id="scene">
+    <div class="stack" id="stack"></div>
+  </div>
+
+  <a class="chord-btn" id="chordBtn" href="chord/index.html" aria-label="make chord — 모인 소리로 음악 만들기">
+    <svg viewBox="0 0 200 200" aria-hidden="true">
+      <defs>
+        <path id="chordRing" d="M100 100 m-29 0 a29 29 0 1 1 58 0 a29 29 0 1 1 -58 0"/>
+      </defs>
+      <g class="shadow">
+        <g class="disc">
+          <circle cx="100" cy="100" r="98" fill="#0c0c0c"/>
+          <!-- grooves -->
+          <g fill="none" stroke="rgba(232,226,212,0.09)" stroke-width="0.8">
+            <circle cx="100" cy="100" r="92"/><circle cx="100" cy="100" r="86"/>
+            <circle cx="100" cy="100" r="80"/><circle cx="100" cy="100" r="74"/>
+            <circle cx="100" cy="100" r="68"/><circle cx="100" cy="100" r="62"/>
+            <circle cx="100" cy="100" r="56"/><circle cx="100" cy="100" r="50"/>
+          </g>
+          <!-- sheen, so the turning reads -->
+          <path d="M100 100 L100 2 A98 98 0 0 1 169 31 Z" fill="rgba(232,226,212,0.06)"/>
+          <path d="M100 100 L100 198 A98 98 0 0 1 31 169 Z" fill="rgba(232,226,212,0.06)"/>
+          <!-- label -->
+          <circle cx="100" cy="100" r="42" fill="#b01d12"/>
+          <!-- stretched to exactly one lap of the ring, so the two halves
+               meet end to end whatever the font measures -->
+          <text font-family="Inter, sans-serif" font-size="8.6" font-weight="600" fill="#e8e2d4">
+            <textPath href="#chordRing" textLength="180" lengthAdjust="spacing">MAKE CHORD · MAKE CHORD · </textPath>
+          </text>
+          <circle cx="100" cy="100" r="3.2" fill="#0c0c0c"/>
+        </g>
+      </g>
+    </svg>
+  </a>
+
+</div>
+
+<script>
+(function(){
+
+  /* ---------------- Stop-motion clock ----------------
+     Every moving thing on screen is driven by GSAP's ticker, so throttling
+     that single clock steps the whole piece at once instead of having to
+     rewrite each animation.
+
+     The hold length is re-drawn every tick, so no two frames are held for
+     exactly the same time. That is what separates "shot by hand" from
+     "low frame rate": a machine-perfect 12fps still reads as digital,
+     while a wobbling hold reads as a camera being tapped frame by frame. */
+  const STOP_MOTION_FPS = 32;        // the cards — stepped but close to fluid
+
+  const HOLD_JITTER = 0.15;          // ±15% on each frame's hold
+
+  const jitteredHold = fps =>
+    (1000 / fps) * (1 + (Math.random() * 2 - 1) * HOLD_JITTER);
+
+  /* A frame can only ever be released on a repaint, so any requested hold
+     gets rounded up to the next one — ask for 31ms on a 60Hz screen and you
+     get a flat 33ms every time, which erases the jitter and drags the rate
+     down. Booking the next beat off the previous *boundary* instead of off
+     "now" carries that overshoot into the following frame, so short and long
+     holds alternate and the average lands on the rate we asked for. */
+  let cardBeat = 0;
+
+  function reseedHold(time){
+    cardBeat += jitteredHold(STOP_MOTION_FPS) / 1000;
+    if (cardBeat < time) cardBeat = time + jitteredHold(STOP_MOTION_FPS) / 1000;
+    gsap.ticker.fps(1 / Math.max(cardBeat - time, 0.001));
+  }
+  gsap.ticker.fps(STOP_MOTION_FPS);
+  gsap.ticker.add(reseedHold);
+
+  /* ---------------- Data ---------------- */
+  const projects = [
+    /* `panel` / `ink` drive the detail view the card opens into: the solid
+       field that grows out of the middle and the type that sits on it.
+       `body` is the paragraph under the title, one array entry per line. */
+    /* `url` is relative to this page and names the file itself, so it
+       opens the piece whether the folder is served (server.ps1, GitHub
+       Pages) or opened straight off the disk — a bare "d/" only gets a
+       directory listing under file://. `bg` falls back to a gradient for
+       pieces without a still of their own. */
+    { id:1, title:"Cattle Mutilation", desc:"캐틀 뮤틸레이션", url:"cattlemutilation/index.html", bg:"url('cattlemutilation/thumb.webp') center/cover no-repeat, #111",
+      panel:"#031927", ink:"#bb1100", body:["캐틀 뮤틸레이션은 소 등 가축이 도륙되어","내부의 피와 내장만 사라진 채 죽은 현상을 일컫는다","외계로의 납치 그리고","육신으로부터의 탈출!"] },
+    { id:2, title:"The Sound of Not the Earth", desc:"Voyager Golden Record", url:"e/index.html", bg:"url('e/thumb.webp') center/cover no-repeat, #111",
+      panel:"#0A2430", ink:"#C8341C", body:["보이저 골든 레코드는 보이저 탐사선 두 대에 실린 축음기 음반으로","외계 생명체에게 인류의 메세지를 전달하고자","지구의 모습과 소리를 담은 LP 디스크이다.","언젠가 돌아갈 외계로 단 하나 메세지를 전한다면","어떤 음을 넣을 것인가…"] },
+    { id:3, title:"Noctiluca",         desc:"Bio-Matrix",       url:"d/index.html",      bg:"linear-gradient(135deg,#0b1e3a,#1fa3a0)",
+      panel:"#8E1F17", ink:"#3BA8C4", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
+    { id:4, title:"I'm Not an Alien",  desc:"Y2K",              url:"imnota/index.html", bg:"url('imnota/assets/space.webp') center/cover no-repeat, #111",
+      panel:"#12304A", ink:"#BFD9EF", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
+    { id:5, title:"Tenshi no Tsubasa", desc:"천사의 날개",       url:"tenshi/index.html", bg:"url('tenshi/thumb.webp') center/cover no-repeat, #111",
+      panel:"#2A1C4A", ink:"#D4A5FF", body:["외계인들이 손에 쥔 무기는 보통 예술이다","외롭거나 괴로운 자들의 영역…","이것만은 영원히 당신의 편"] },
+  ];
+
+  /* ---------------- DOM setup ---------------- */
+  const stackEl = document.getElementById('stack');
+  const sceneEl = document.getElementById('scene');
+  const panelLeft = document.querySelector('.panel-left');
+  const panelRight = document.querySelector('.panel-right');
+  const hintEl = document.querySelector('.hint');
+  const metaIndexEl = document.getElementById('metaIndex');
+  const metaTitleEl = document.getElementById('metaTitle');
+  const metaDescEl = document.getElementById('metaDesc');
+  const detailEl = document.getElementById('detail');
+  const detailFill = document.getElementById('detailFill');
+  const detailContent = document.getElementById('detailContent');
+  const detailTitle = document.getElementById('detailTitle');
+  const detailBody = document.getElementById('detailBody');
+  const detailGo = document.getElementById('detailGo');
+  const chordBtn = document.getElementById('chordBtn');
+
+  /* "make chord" only turns up once this visitor has been through at least
+     one piece — every piece page leaves a mark in sessionStorage on its way
+     in (shared/back.js). pageshow also covers coming back with the browser's
+     own back button, when the page is restored from cache instead of
+     loading again. */
+  function showChordIfVisited(){
+    let visited = false;
+    try { visited = sessionStorage.getItem('xg.visited') === '1'; } catch (e) {}
+    chordBtn.classList.toggle('is-shown', visited);
+    document.body.classList.toggle('has-chord', visited);
+  }
+  showChordIfVisited();
+  window.addEventListener('pageshow', showChordIfVisited);
+
+  /* The detail view sits there until it is dismissed one way or the other:
+     the arrow or a right swipe go to the site, a left swipe goes back to
+     the fan. The URL waits here rather than firing off the end of the open
+     animation. */
+  let pendingUrl = null;
+  let openTl = null;      // the opening, kept so a swipe back can reverse it
+  let activeCard = null;
+  let closing = false;
+
+  function leaveForSite(){
+    if (!pendingUrl) return;
+    console.log('Navigating to:', pendingUrl);
+    window.location.href = pendingUrl;
+  }
+
+  function closeDetail(){
+    if (!activated || !openTl || closing) return;
+    closing = true;
+    detailEl.classList.remove('is-open');
+    if (activeCard) activeCard.classList.remove('is-live');
+
+    openTl.eventCallback('onReverseComplete', () => {
+      // hand the fan back to the render loop, exactly as it was
+      if (activeCard) activeCard.style.zIndex = '';
+      sceneEl.style.zIndex = '';
+      sceneEl.classList.remove('activated');
+      gsap.set([detailEl, sceneEl], { x: 0 });
+      openTl = null;
+      activeCard = null;
+      pendingUrl = null;
+      closing = false;
+      activated = false;
+    });
+    openTl.timeScale(1.7).reverse();
+  }
+
+  detailGo.addEventListener('click', leaveForSite);
+
+  /* The artwork itself is a second way onward: a double click (or double
+     tap) on the card in the detail view goes to the site, same as the
+     arrow. Only the card that opened counts, and only once it has landed. */
+  const cardIsLive = card =>
+    card === activeCard && !closing && detailEl.classList.contains('is-open');
+  let detailTapTime = 0;
+
+  function bindCardOpen(card){
+    card.addEventListener('dblclick', () => { if (cardIsLive(card)) leaveForSite(); });
+    card.addEventListener('touchend', () => {
+      if (!cardIsLive(card)) return;
+      const now = Date.now();
+      if (now - detailTapTime < 350){ detailTapTime = 0; leaveForSite(); }
+      else detailTapTime = now;
+    });
+  }
+
+  /* ---------------- Detail view: swipe ----------------
+     Right takes you back to the fan, left goes on to the site. The view
+     follows the finger at a fraction of the distance so the gesture has
+     something to push against before it commits. */
+  const SWIPE_COMMIT = 90;      // px before a swipe counts
+  const SWIPE_FOLLOW = 0.32;    // how far the view tracks the drag
+  let swipeX = null, swipeY = null, swipeDX = 0;
+
+  const swipePoint = e => (e.touches && e.touches[0]) || e.changedTouches?.[0] || e;
+
+  function onSwipeDown(e){
+    if (!detailEl.classList.contains('is-open') || closing) return;
+    const p = swipePoint(e);
+    swipeX = p.clientX; swipeY = p.clientY; swipeDX = 0;
+  }
+
+  function onSwipeMove(e){
+    if (swipeX === null) return;
+    const p = swipePoint(e);
+    const dx = p.clientX - swipeX;
+    // ignore mostly-vertical drags
+    if (Math.abs(p.clientY - swipeY) > Math.abs(dx) * 1.5 && Math.abs(dx) < SWIPE_COMMIT) return;
+    swipeDX = dx;
+    gsap.set([detailEl, sceneEl], { x: dx * SWIPE_FOLLOW });
+  }
+
+  function onSwipeUp(){
+    if (swipeX === null) return;
+    const dx = swipeDX;
+    swipeX = null; swipeY = null; swipeDX = 0;
+
+    if (dx >= SWIPE_COMMIT){ closeDetail(); return; }
+    if (dx <= -SWIPE_COMMIT){
+      // carry on the way the swipe was already going
+      gsap.to([detailEl, sceneEl], {
+        x: -window.innerWidth * 0.08, duration: 0.25, ease: 'power2.in',
+        onComplete: leaveForSite
+      });
+      return;
+    }
+    gsap.to([detailEl, sceneEl], { x: 0, duration: 0.45, ease: 'elastic.out(1, 0.6)' });
+  }
+
+  window.addEventListener('mousedown', onSwipeDown);
+  window.addEventListener('mousemove', onSwipeMove);
+  window.addEventListener('mouseup', onSwipeUp);
+  window.addEventListener('touchstart', onSwipeDown, { passive:true });
+  window.addEventListener('touchmove', onSwipeMove, { passive:true });
+  window.addEventListener('touchend', onSwipeUp);
+
+  /* The artwork's slot in the detail view, measured off the 1920×1080
+     panel: a 502px square whose top-left sits at (224, 287). Kept as
+     fractions so it scales with the window instead of breaking below
+     1920. The card grows into this from whatever size the stack uses. */
+  const DETAIL_CARD_SIZE = 502 / 1920;        // 26.15vw
+  const DETAIL_CARD_X = (224 + 502 / 2) / 1920;   // centre, 24.75%
+  const DETAIL_CARD_Y = (287 + 502 / 2) / 1080;   // centre, 49.86%
+
+  const cardEls = projects.map((p, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.dataset.index = i;
+
+    const inner = document.createElement('div');
+    inner.className = 'card-inner';
+    // the card is the artwork alone; its name is in the index panel
+    inner.innerHTML = `<div class="card__thumb" style="background:${p.bg}"></div>`;
+    inner.setAttribute('aria-label', p.title);
+    card.appendChild(inner);
+    stackEl.appendChild(card);
+    bindCardOpen(card);
+
+    // outer .card handles 3D tilt (rotationX) + stack position; inner handles the
+    // in-plane 45deg spin so the tilt is applied AFTER the diamond rotation (nested
+    // transforms), producing a symmetric flattened diamond instead of a skewed kite.
+    // the fan is flat: cards face the viewer and only turn in the plane
+    gsap.set(card, { xPercent:-50, yPercent:-50 });
+    return card;
+  });
+
+  const n = projects.length;
+
+
+  /* ---------------- State ---------------- */
+  let currentDisplay = 0;   // eased/lerped index
+  let targetIndex = 0;      // where we're moving toward
+  let isDragging = false;
+  let dragStartX = 0;
+  let dragStartIndexAtDrag = 0;
+  let dragMoved = 0;
+  let activated = false;
+  let lastMetaIndex = -1;
+
+  const DRAG_SENSITIVITY = 90;   // px per card step
+  const WHEEL_SENSITIVITY = 300;
+
+  /* ---------------- Render loop ----------------
+     The deck is fanned along an arc, the way a hand of cards is held:
+     every card sits on a circle whose centre is far below the viewport,
+     and each one is turned to stay square to that circle. rel is a card's
+     slot either side of the focused one, so the arc is always centred on
+     whatever is in front.
+
+     The radius follows the wider of the two viewport dimensions. Tying it
+     to height alone works on a squarish window but on a 16:9 one the arc
+     is narrower than the screen, so cards would pile up near the ends
+     instead of running off the edges. */
+  const ARC_STEP_DEG = 20;     // angular gap between neighbouring cards
+  const ARC_APEX = 0.47;       // where the focused card sits, down the screen
+
+  function arcRadius(){
+    return Math.max(window.innerHeight * 0.98, window.innerWidth * 0.62);
+  }
+
+  // slot in [-n/2, n/2), so a card leaving one end reappears at the other
+  function slotFor(i, from){
+    const rel = ((i - from) % n + n) % n;
+    return rel > n / 2 ? rel - n : rel;
+  }
+
+  function renderStack(){
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const r = arcRadius();
+    const cx = vw / 2;
+    const cy = ARC_APEX * vh + r;          // circle centre, below the screen
+
+    for (let i = 0; i < n; i++){
+      const rel = slotFor(i, currentDisplay);
+      const a = rel * ARC_STEP_DEG * Math.PI / 180;
+
+      gsap.set(cardEls[i], {
+        // cards are laid out from the middle of the viewport, so the arc
+        // position has to be expressed as an offset from there
+        x: cx + Math.sin(a) * r - vw / 2,
+        y: cy - Math.cos(a) * r - vh / 2,
+        rotation: rel * ARC_STEP_DEG,
+        scale: 1 - Math.abs(rel) * 0.035,
+        opacity: 1,
+        zIndex: Math.round((n - Math.abs(rel)) * 10)
+      });
+    }
+
+    updateMeta(((Math.round(currentDisplay) % n) + n) % n);
+  }
+
+  function updateMeta(i){
+    if (activated || i === lastMetaIndex) return;
+    lastMetaIndex = i;
+    const p = projects[i];
+    metaIndexEl.textContent = String(i + 1).padStart(2, '0');
+    metaTitleEl.textContent = p.title;
+    metaDescEl.textContent = p.desc;
+  }
+
+  /* The stack rides the same stop-motion clock as everything else. The
+     0.08-per-frame glide was tuned at 60fps, so it is rebased onto the
+     elapsed time of each hold — the settle keeps the exact curve and
+     duration it had before, it is just sampled on the stop-motion beats
+     and stays put no matter how long an individual frame is held. */
+  /* The stack rides a spring rather than an exponential glide. An
+     exponential only ever creeps up on its target, which reads as soft; a
+     spring carries its momentum past the mark and pulls back, so a card
+     lands with a bit of weight behind it.
+
+     SPRING_D sits under the critical value (2·√K ≈ 26), which is what
+     leaves the overshoot in. Integrated in fixed sub-steps so the feel is
+     identical whatever the frame rate, and so a long stall cannot hand the
+     spring a huge timestep and blow it up. */
+  const SPRING_K = 170;        // pull toward the target
+  const SPRING_D = 16;         // damping — under critical, hence the bounce
+  const SPRING_STEP = 1 / 240;
+
+  let springVel = 0;
+  let springCarry = 0;
+
+  gsap.ticker.add((time, deltaTime) => {
+    springCarry += Math.min(deltaTime, 200) / 1000;
+    while (springCarry >= SPRING_STEP){
+      const accel = (targetIndex - currentDisplay) * SPRING_K - springVel * SPRING_D;
+      springVel += accel * SPRING_STEP;
+      currentDisplay += springVel * SPRING_STEP;
+      springCarry -= SPRING_STEP;
+    }
+    if (!activated) renderStack();
+  });
+
+  /* ---------------- Pointer helpers ----------------
+     The fan runs left to right, so it is dragged left to right too — a
+     vertical drag would have the cards travelling at right angles to the
+     hand moving them. Dragging left pulls the next card into the middle,
+     matching the direction the deck itself moves. */
+  function pointX(e){
+    if (e.touches && e.touches.length) return e.touches[0].clientX;
+    if (e.changedTouches && e.changedTouches.length) return e.changedTouches[0].clientX;
+    return e.clientX;
+  }
+
+  /* ---------------- Drag (mouse) ---------------- */
+  function onMouseDown(e){
+    if (activated) return;
+    isDragging = true;
+    dragMoved = 0;
+    dragStartX = pointX(e);
+    dragStartIndexAtDrag = targetIndex;
+    sceneEl.classList.add('dragging');
+  }
+  function onMouseMove(e){
+    if (!isDragging) return;
+    const x = pointX(e);
+    const deltaX = dragStartX - x;
+    dragMoved = Math.max(dragMoved, Math.abs(deltaX));
+    targetIndex = dragStartIndexAtDrag + deltaX / DRAG_SENSITIVITY;
+  }
+  function onMouseUp(){
+    if (!isDragging) return;
+    isDragging = false;
+    sceneEl.classList.remove('dragging');
+    targetIndex = Math.round(targetIndex);
+  }
+
+  sceneEl.addEventListener('mousedown', onMouseDown);
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+  sceneEl.addEventListener('mouseleave', () => { /* keep dragging through leave; released on window mouseup */ });
+
+  /* ---------------- Double click (desktop) ----------------
+     Cards are nested 3D-transformed diamonds (rotationX on the
+     outer element, rotationZ on the inner one) inside a
+     perspective + preserve-3d stage. Hit-testing individual
+     rotated layers with elementFromPoint is unreliable across
+     browsers in that setup, so a double click/tap anywhere on
+     the scene simply opens the card currently at the front. */
+  sceneEl.addEventListener('dblclick', () => {
+    clearTimeout(singleClickTimer);
+    if (activated) return;
+    activateCard(lastMetaIndex >= 0 ? lastMetaIndex : 0);
+  });
+
+  /* ---------------- Single click: next card ----------------
+     A single click steps the stack on by one. The action is held for one
+     double-click interval so that opening a card does not also advance it. */
+  const DOUBLE_CLICK_GRACE = 240;
+  let singleClickTimer = null;
+
+  sceneEl.addEventListener('click', () => {
+    if (activated || dragMoved >= 8) return;
+    clearTimeout(singleClickTimer);
+    singleClickTimer = setTimeout(() => {
+      if (!activated) targetIndex = Math.round(targetIndex) + 1;
+    }, DOUBLE_CLICK_GRACE);
+  });
+
+  /* ---------------- Touch ---------------- */
+  let lastTapTime = 0;
+
+  function onTouchStart(e){
+    if (activated) return;
+    isDragging = true;
+    dragMoved = 0;
+    dragStartX = pointX(e);
+    dragStartIndexAtDrag = targetIndex;
+  }
+  function onTouchMove(e){
+    if (!isDragging) return;
+    e.preventDefault();
+    const x = pointX(e);
+    const deltaX = dragStartX - x;
+    dragMoved = Math.max(dragMoved, Math.abs(deltaX));
+    targetIndex = dragStartIndexAtDrag + deltaX / DRAG_SENSITIVITY;
+  }
+  function onTouchEnd(){
+    if (!isDragging) return;
+    isDragging = false;
+    targetIndex = Math.round(targetIndex);
+
+    if (dragMoved < 10){
+      const now = Date.now();
+      if (now - lastTapTime < 350){
+        clearTimeout(singleClickTimer);   // a double tap opens, it does not wipe
+        activateCard(lastMetaIndex >= 0 ? lastMetaIndex : 0);
+        lastTapTime = 0;
+      } else {
+        lastTapTime = now;
+      }
+    }
+  }
+
+  sceneEl.addEventListener('touchstart', onTouchStart, { passive:true });
+  sceneEl.addEventListener('touchmove', onTouchMove, { passive:false });
+  sceneEl.addEventListener('touchend', onTouchEnd);
+
+  /* ---------------- Wheel ---------------- */
+  let wheelTimeout = null;
+  sceneEl.addEventListener('wheel', (e) => {
+    if (activated) return;
+    targetIndex += e.deltaY / WHEEL_SENSITIVITY;
+    clearTimeout(wheelTimeout);
+    wheelTimeout = setTimeout(() => {
+      targetIndex = Math.round(targetIndex);
+    }, 150);
+  }, { passive:true });
+
+  /* ---------------- Activation: stand up + fullscreen morph ---------------- */
+  function activateCard(index){
+    if (activated) return;
+    activated = true;
+
+    const card = cardEls[index];
+    const inner = card.querySelector('.card-inner');
+    const project = projects[index];
+    card.style.zIndex = 999;
+
+    const others = cardEls.filter((_, i) => i !== index);
+
+    // dress the detail view for this project before anything is revealed
+    detailFill.style.background = project.panel;
+    detailContent.style.color = project.ink;
+    detailTitle.textContent = project.title;
+    detailBody.innerHTML = (project.body || [])
+      .map(line => `<span>${line}</span>`).join('');
+    const bodyLines = [...detailBody.children];
+
+    // the card has to ride above the field it lands on
+    sceneEl.style.zIndex = 20;
+    sceneEl.classList.add('activated');
+
+    pendingUrl = project.url;
+    activeCard = card;
+
+    /* Everything the opening touches lives on this one timeline — the rest
+       of the deck, the index furniture, the card's own caption — so that
+       swiping back can simply run it in reverse and leave the fan exactly
+       as it was. */
+    const tl = gsap.timeline({
+      onComplete: () => {
+        detailEl.classList.add('is-open');
+        card.classList.add('is-live');
+      }
+    });
+    openTl = tl;
+
+    tl.to(others, {
+        y: '+=340', opacity: 0,
+        duration: 0.4, ease: 'power2.in', stagger: 0.03
+      }, 0)
+      .to([panelLeft, panelRight, hintEl, chordBtn],
+          { opacity: 0, duration: 0.3, ease: 'power1.out' }, 0)
+      // the record would sit on top of the detail view's type otherwise
+      .set(chordBtn, { pointerEvents: 'none' }, 0)
+
+      // 1. the card squares up where it is, at the size it already is
+      .to(card, {
+        rotation: 0, x: 0, y: 0, scale: 1,
+        duration: 0.35, ease: 'power3.out'
+      }, 0)
+
+      // 2. the solid field opens out of the middle and takes the viewport
+      .to(detailFill, {
+        scale: 1, duration: 0.62, ease: 'power3.inOut'
+      }, 0.26)
+
+      // 3. the card grows into the 502px artwork slot on the left
+      .to(card, {
+        x: () => (DETAIL_CARD_X - 0.5) * window.innerWidth,
+        y: () => (DETAIL_CARD_Y - 0.5) * window.innerHeight,
+        scale: () => (DETAIL_CARD_SIZE * window.innerWidth) / card.offsetWidth,
+        duration: 0.6, ease: 'power3.inOut'
+      }, 0.42)
+
+      // the stack's rounding, hairline and drop shadow all belong to the
+      // deck, not to a piece of artwork lying flat on a colour field
+      .to(inner, {
+        borderRadius: 0,
+        borderColor: 'rgba(255,255,255,0)',
+        boxShadow: '0 30px 70px -18px rgba(20,20,15,0), 0 6px 18px -6px rgba(20,20,15,0)',
+        duration: 0.6, ease: 'power3.inOut'
+      }, 0.42)
+
+      // 4. the type arrives once there is a field to sit on
+      .to(detailContent, { opacity: 1, duration: 0.01 }, 0.72)
+      .from(detailTitle, {
+        opacity: 0, y: 28, duration: 0.5, ease: 'power2.out'
+      }, 0.72)
+      .from(bodyLines, {
+        opacity: 0, y: 18, duration: 0.45, ease: 'power2.out', stagger: 0.07
+      }, 0.86)
+
+      // 5. the arrow arrives last, since it is now the only way onward
+      .from(detailGo, {
+        opacity: 0, duration: 0.4, ease: 'power2.out'
+      }, 1.05);
+  }
+
+})();
+</script>
+</body>
+</html>

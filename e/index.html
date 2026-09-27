@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Drawn Groove — 33⅓ RPM</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <main class="stage-wrap" id="stageWrap">
+      <canvas id="stage" aria-label="Turntable. Tap dots onto the record, then drag the needle onto it."></canvas>
+    </main>
+
+    <footer class="bottom">
+      <p class="hint" id="hint" aria-live="polite">tap for a dot · hold 1s to draw a line</p>
+
+      <div class="toolbar">
+        <div class="group swatches" role="radiogroup" aria-label="Brush (instrument)">
+          <div id="swatches" class="swatch-row"></div>
+          <span class="brush-name" id="brushName">Piano</span>
+        </div>
+
+        <div class="group">
+          <select id="keySelect" aria-label="Key"></select>
+          <select id="scaleSelect" aria-label="Scale"></select>
+        </div>
+
+        <div class="group seg" id="rpmSeg" aria-label="Speed">
+          <button data-rpm="33.333">33⅓</button>
+          <button data-rpm="45">45</button>
+        </div>
+
+        <div class="group">
+          <button class="icon" id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
+          <button class="icon" id="clearBtn" title="Clear record" aria-label="Clear">✕</button>
+          <button class="icon" id="moreBtn" title="More" aria-label="More options" aria-expanded="false">⋯</button>
+        </div>
+      </div>
+    </footer>
+
+    <div class="panel" id="morePanel" hidden>
+      <div class="row">
+        <span class="label">Needle</span>
+        <div class="seg" id="modeSeg">
+          <button data-mode="fixed">Fixed</button>
+          <button data-mode="sweep">Sweep</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="label">Reads</span>
+        <div class="seg" id="bandSeg">
+          <button data-band="narrow">Narrow</button>
+          <button data-band="wide">Wide</button>
+          <button data-band="whole">Whole</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="label">Motion</span>
+        <div class="seg" id="motionSeg">
+          <button data-motion="stop">Stop-motion</button>
+          <button data-motion="smooth">Smooth</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="label">Steps</span>
+        <div class="seg" id="stepsSeg">
+          <button data-steps="16">16</button>
+          <button data-steps="32">32</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="label">Tempo</span>
+        <input type="range" id="tempo" min="0.2" max="1" step="0.02" value="0.42" aria-label="Tempo multiplier">
+        <span class="value" id="tempoValue">1.00×</span>
+      </div>
+      <div class="row">
+        <span class="label">Presets</span>
+        <div class="buttons" id="presetButtons"></div>
+      </div>
+      <div class="row">
+        <span class="label">Record</span>
+        <div class="buttons">
+          <button class="pill" id="saveBtn">Save</button>
+          <button class="pill" id="loadBtn">Load</button>
+          <button class="pill" id="shareBtn">Share link</button>
+        </div>
+      </div>
+      <div class="row">
+        <span class="label">Audio</span>
+        <div class="buttons">
+          <button class="pill rec" id="recBtn"><span class="dot"></span><span id="recLabel">Record audio</span></button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" hidden></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tone@14.7.77/build/Tone.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/poly-decomp@0.3.0/build/decomp.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/memory.js"></script>
+  <script src="js/glass.js"></script>
+  <script src="js/artwork.js"></script>
+  <script src="js/record.js"></script>
+  <script src="js/audio.js"></script>
+  <script src="js/sequencer.js"></script>
+  <script src="js/drawing.js"></script>
+  <script src="js/tonearm.js"></script>
+  <script src="js/storage.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="main.js"></script>
+<script src="../shared/back.js" data-color="#1a0a08"></script>
+</body>
+</html>

@@ -1,0 +1,1359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NOCTILUCA · Bio-Matrix</title>
+<style>
+  :root{--bg:#050807;--g:#00ff87;--c:#00f2fe;--dim:rgba(0,255,135,.35);--line:#0b1a14}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:var(--bg);color:var(--g);overflow:hidden;
+    font-family:ui-monospace,"JetBrains Mono",Consolas,"Courier New",monospace}
+  #app{display:grid;grid-template-columns:1fr 1fr;height:100vh;height:100dvh;gap:1px;background:var(--line)}
+  .pane{position:relative;background:var(--bg);overflow:hidden}
+  canvas.main{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+  #link{position:fixed;inset:0;width:100vw;height:100vh;pointer-events:none;z-index:4}
+  .tag{position:absolute;top:14px;left:16px;font-size:10px;letter-spacing:.22em;color:var(--c);
+    opacity:.85;pointer-events:none;text-transform:uppercase;line-height:1.7;z-index:5}
+  .tag b{color:var(--g);font-weight:600}
+  #status{position:absolute;left:16px;bottom:14px;font-size:10px;letter-spacing:.14em;color:var(--c);
+    display:flex;gap:10px;align-items:center;flex-wrap:wrap;z-index:5}
+  #status .dot{width:7px;height:7px;border-radius:50%;background:#355;display:inline-block;margin-right:6px;vertical-align:middle}
+  #status.on .dot{background:var(--g);box-shadow:0 0 8px var(--g)}
+  #camBtn{background:transparent;border:1px solid var(--dim);color:var(--g);font:inherit;font-size:10px;
+    letter-spacing:.16em;padding:6px 10px;cursor:pointer}
+  #camBtn:hover{border-color:var(--g)}
+  #camBtn[hidden],#cam[hidden]{display:none}
+  #cam{position:absolute;right:14px;bottom:14px;width:168px;aspect-ratio:4/3;border:1px solid var(--dim);
+    background:#000;opacity:.85;pointer-events:none;z-index:5}
+  #cam video,#cam canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+  #cam video{filter:grayscale(1) brightness(.5)}
+  #cam span{position:absolute;left:6px;top:4px;font-size:9px;letter-spacing:.14em;color:var(--g);z-index:2}
+  @media (max-aspect-ratio:1/1){#app{grid-template-columns:1fr;grid-template-rows:1fr 1fr}#cam{width:112px}}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="pane">
+    <canvas id="left" class="main"></canvas>
+    <div class="tag" style="left:calc(clamp(16px, 2.2vw, 44px) + clamp(36px, 3.1vw, 60px) + 14px);top:calc(clamp(16px, 2.2vw, 44px) + 2px)"><b>SPECIMEN · NOCTILUCA-Φ</b><br>bioluminescent field / live</div>
+    <div id="status"><span id="statusText"><i class="dot"></i>INITIALISING</span><button id="camBtn" hidden>ENABLE HAND TRACKING</button></div>
+  </div>
+  <div class="pane">
+    <canvas id="right" class="main"></canvas>
+    <div class="tag"><b>MATRIX.DECODE</b><br>cv overlay · morph lattice · lod</div>
+    <div id="cam" hidden><span>CAM · HAND</span><video id="video" playsinline muted></video><canvas id="handCv" width="320" height="240"></canvas></div>
+  </div>
+</div>
+<canvas id="link"></canvas>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/hands.js" crossorigin="anonymous"></script>
+<script>
+(() => {
+'use strict';
+const TAU = Math.PI * 2;
+const $ = id => document.getElementById(id);
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const fract = x => x - Math.floor(x);
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = (k, dt) => 1 - Math.pow(1 - k, dt * 60);
+const smooth = x => x * x * (3 - 2 * x);
+const ihash = (i, j) => { let h = Math.imul(i, 73856093) ^ Math.imul(j, 19349663); h = Math.imul(h ^ (h >>> 13), 1274126177); return (h ^ (h >>> 16)) & 255; };
+
+// ================= palette: sine-wave hue cycling =================
+// hue 184 ≈ #00f2fe (cyan) · 152 ≈ #00ff87 (emerald) · 100 ≈ #a8ff78 (lime)
+let HUE = 152;
+const hsl = (dh, l, a, s = 100) => `hsla(${(HUE + dh).toFixed(1)},${s}%,${l}%,${a})`;
+const hc = (dh, l, a = 1) => `hsla(${(HUE + dh).toFixed(1)},100%,${(l * 100).toFixed(1)}%,${a})`;
+function updatePalette(t) {
+  HUE = 142 + 42 * Math.sin(t * 0.23) + 3 * Math.sin(t * 0.71);
+}
+
+// ================= canvases =================
+const L = $('left'), R = $('right'), LINK = $('link');
+const lx = L.getContext('2d'), rx = R.getContext('2d'), kx = LINK.getContext('2d');
+const mk = (opts) => { const c = document.createElement('canvas'); return [c, c.getContext('2d', opts)]; };
+const [scene, sx] = mk(), [bloom, bx] = mk(), [mask, mx] = mk({ willReadFrequently: true });
+const [matC, mcx] = mk(), [gridC, gx] = mk();
+const hasFilter = typeof bx.filter === 'string';
+
+let W = 1, H = 1, DPR = 1, S = 100, MCELL = 6, MC = 1, MR = 1, CS_MIN = 7, CS_MAX = 30;
+let LR = { left: 0, top: 0 }, RR = { left: 0, top: 0 };
+let prevMask = new Uint8Array(1);
+
+// white digit atlases (tinted at composite time), several sizes for crisp LOD
+const ATLAS_SIZES = [12, 22, 36, 60], ATLAS_ALPHA = [.2, .42, .64, .86, 1];
+const atlases = ATLAS_SIZES.map((cp, idx) => {
+  const [cv, g] = mk();
+  cv.width = cp * 10; cv.height = cp * ATLAS_ALPHA.length;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.font = `${idx >= 2 ? 700 : 400} ${Math.round(cp * .86)}px ui-monospace,Consolas,monospace`;
+  ATLAS_ALPHA.forEach((a, l) => {
+    g.fillStyle = `rgba(255,255,255,${a})`;
+    for (let d = 0; d < 10; d++) g.fillText(String(d), d * cp + cp / 2, l * cp + cp / 2 + cp * .05);
+  });
+  return { cv, cp };
+});
+
+function resize() {
+  const r = L.getBoundingClientRect();
+  W = Math.max(1, r.width); H = Math.max(1, r.height);
+  DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+  for (const [c, g] of [[L, lx], [R, rx], [scene, sx], [matC, mcx]]) {
+    c.width = Math.round(W * DPR); c.height = Math.round(H * DPR); g.setTransform(DPR, 0, 0, DPR, 0, 0);
+  }
+  LINK.width = Math.round(innerWidth * DPR); LINK.height = Math.round(innerHeight * DPR);
+  kx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  LR = L.getBoundingClientRect(); RR = R.getBoundingClientRect();
+  bloom.width = Math.ceil(W / 4); bloom.height = Math.ceil(H / 4);
+  S = Math.min(W, H) * .15;
+  MCELL = Math.max(4, Math.round(Math.min(W, H) / 150));
+  MC = Math.ceil(W / MCELL); MR = Math.ceil(H / MCELL);
+  mask.width = MC; mask.height = MR;
+  prevMask = new Uint8Array(MC * MR);
+  CS_MIN = Math.max(6, Math.min(W, H) / 115); CS_MAX = Math.min(W, H) / 28;
+  body.x = W * .5; body.y = H * .42; body.vx = body.vy = 0;
+  disp.fill(0); dvel.fill(0);
+  resizeThree(); buildGrid(); initTentacles(); initParticles();
+  handlesReady = false;
+  trailCount = 0;
+}
+
+function buildGrid() {
+  gridC.width = Math.round(W * DPR); gridC.height = Math.round(H * DPR);
+  gx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const step = Math.round(Math.min(W, H) / 12);
+  gx.strokeStyle = 'rgba(140,220,200,0.05)'; gx.lineWidth = 1; gx.beginPath();
+  for (let x = 0; x <= W; x += step) { gx.moveTo(x + .5, 0); gx.lineTo(x + .5, H); }
+  for (let y = 0; y <= H; y += step) { gx.moveTo(0, y + .5); gx.lineTo(W, y + .5); }
+  gx.stroke();
+  gx.fillStyle = 'rgba(160,255,220,0.3)'; gx.font = '9px ui-monospace,Consolas,monospace';
+  for (let x = step; x < W; x += step * 2) gx.fillText(String(Math.round(x)), x + 3, H - 4);
+  for (let y = step; y < H; y += step * 2) gx.fillText(String(Math.round(y)), 3, y - 3);
+}
+
+// ================= state =================
+const body = { x: 0, y: 0, vx: 0, vy: 0 };
+const jelly = { angle: 0, phase: 0 };
+const pointer = { x: .5, y: .5, down: false, inside: false, move: -1e9, hold: -1e9, holdX: .5, holdY: .4 };
+const hand = { x: .5, y: .5, last: -1e9, pinch: 1, pinched: false };
+const inter = { x: 0, y: 0, px: 0, py: 0, active: false, speed: 0, str: 1 };
+let inputMode = 'AUTO', pulseBoost = 0, strain = 0;
+let t = 0, c = 0, cPrev = 0, dcdt = 0, Rc = 0, Hh = 0, CEN_Y = 0, cx = 0, cy = 0, cosA = 1, sinA = 0, nodeX = 0, nodeY = 0;
+
+function pulseAt(ph) {
+  const u = ((ph / TAU) % 1 + 1) % 1;
+  return u < .3 ? Math.sin(u / .3 * Math.PI / 2) : Math.pow(Math.cos((u - .3) / .7 * Math.PI / 2), 1.6);
+}
+
+// ================= three.js scene: real 3D bell mesh + elastic springs =================
+// World units are CSS pixels on the z = 0 plane, so the screen-space physics keeps working.
+const threeCanvas = document.createElement('canvas');
+const RND = new THREE.WebGLRenderer({ canvas: threeCanvas, alpha: true, antialias: true, preserveDrawingBuffer: true });
+RND.setClearColor(0x000000, 0);
+const scene3 = new THREE.Scene();
+const CAM_FOV = 38, CAM_TAN = Math.tan(CAM_FOV * .5 * Math.PI / 180);
+const camera3 = new THREE.PerspectiveCamera(CAM_FOV, 1, 1, 12000);
+const jellyRoot = new THREE.Group(), jellyTilt = new THREE.Group(), jellySpin = new THREE.Group();
+jellyRoot.add(jellyTilt); jellyTilt.add(jellySpin); scene3.add(jellyRoot);
+
+const A_SEG = 64, R_SEG = 20, MER_N = 16, RING_S = [.35, .55, .75, .92];
+const phiC = new Float32Array(A_SEG), phiS = new Float32Array(A_SEG);
+for (let j = 0; j < A_SEG; j++) { const a = j / A_SEG * TAU; phiC[j] = Math.cos(a); phiS[j] = Math.sin(a); }
+const disp = new Float32Array(A_SEG), dvel = new Float32Array(A_SEG), extF = new Float32Array(A_SEG);
+let apexD = 0, apexV = 0, apexX = 0, apexY = 0, PITCH = .24, YAW = 0;
+let PR = 0, PY0 = 0, PNR = 0, PNY = 0;
+const rimLocal = new Float32Array(A_SEG * 3);
+const ring08 = new Float32Array(A_SEG * 4);
+const hullSrc = new Float32Array((A_SEG * 2 + 2) * 2), hullBuf = new Float32Array((A_SEG * 2 + 4) * 2);
+let outline = hullBuf.subarray(0, 6);
+const _v = new THREE.Vector3(), _w = new THREE.Vector3();
+
+const U3 = {
+  colA: { value: new THREE.Color(0x00ff87) }, colB: { value: new THREE.Color(0x00f2fe) },
+  uNear: { value: 0 }, uFar: { value: 1 },
+};
+const bellMat = new THREE.ShaderMaterial({
+  uniforms: U3,
+  vertexShader: [
+    'attribute float aS;',
+    'varying vec3 vN; varying vec3 vV; varying float vS;',
+    'void main() {',
+    '  vS = aS;',
+    '  vec4 mv = modelViewMatrix * vec4(position, 1.0);',
+    '  vN = normalize(normalMatrix * normal);',
+    '  vV = normalize(-mv.xyz);',
+    '  gl_Position = projectionMatrix * mv;',
+    '}'
+  ].join('\n'),
+  fragmentShader: [
+    'uniform vec3 colA; uniform vec3 colB;',
+    'varying vec3 vN; varying vec3 vV; varying float vS;',
+    'void main() {',
+    '  float rim = pow(1.0 - abs(dot(normalize(vN), normalize(vV))), 2.2);',
+    '  float a = 0.04 + 0.7 * rim + 0.1 * (1.0 - vS);',
+    '  gl_FragColor = vec4(mix(colA, colB, vS) * a, a);',
+    '}'
+  ].join('\n'),
+  transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+});
+const LINE_VS = [
+  'varying float vD;',
+  'void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vD = -mv.z; gl_Position = projectionMatrix * mv; }'
+].join('\n');
+const LINE_FS = [
+  'uniform vec3 colA; uniform vec3 colB; uniform float uNear; uniform float uFar;',
+  'uniform float uA; uniform float uBack; uniform float uMix;',
+  'varying float vD;',
+  'void main() {',
+  '  float d = clamp((vD - uNear) / max(uFar - uNear, 1e-3), 0.0, 1.0);',
+  '  float a = uA * mix(1.0, uBack, d);',
+  '  gl_FragColor = vec4(mix(colA, colB, uMix) * a, a);',
+  '}'
+].join('\n');
+function lineMaterial(alpha, back, mix) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      colA: U3.colA, colB: U3.colB, uNear: U3.uNear, uFar: U3.uFar,
+      uA: { value: alpha }, uBack: { value: back }, uMix: { value: mix }
+    },
+    vertexShader: LINE_VS, fragmentShader: LINE_FS,
+    transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+}
+const maskMat = new THREE.MeshBasicMaterial({
+  color: 0xffffff, transparent: true, opacity: .5,
+  blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide
+});
+
+let bellGeo = null, bellMesh = null, latGeo = null, latLines = null;
+let rimGeo = null, rimLine = null, gonGeo = null, gonLine = null;
+let maskRT = null, maskBuf = new Uint8Array(4);
+
+function resizeThree() {
+  RND.setPixelRatio(DPR); RND.setSize(W, H, false);
+  camera3.aspect = W / H;
+  camera3.position.set(0, 0, (H * .5) / CAM_TAN);
+  camera3.lookAt(0, 0, 0);
+  camera3.updateProjectionMatrix();
+  if (maskRT) maskRT.dispose();
+  maskRT = new THREE.WebGLRenderTarget(MC, MR);
+  maskBuf = new Uint8Array(MC * MR * 4);
+  buildBellGeometry();
+}
+
+function buildBellGeometry() {
+  if (bellMesh) { jellySpin.remove(bellMesh); bellGeo.dispose(); }
+  if (latLines) { jellySpin.remove(latLines); latGeo.dispose(); }
+  if (rimLine) { jellySpin.remove(rimLine); rimGeo.dispose(); }
+  if (gonLine) { jellySpin.remove(gonLine); gonGeo.dispose(); }
+  const nv = (R_SEG + 1) * (A_SEG + 1), idx = [];
+  bellGeo = new THREE.BufferGeometry();
+  bellGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nv * 3), 3));
+  bellGeo.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nv * 3), 3));
+  bellGeo.setAttribute('aS', new THREE.BufferAttribute(new Float32Array(nv), 1));
+  for (let i = 0; i < R_SEG; i++) for (let j = 0; j < A_SEG; j++) {
+    const a = i * (A_SEG + 1) + j, b = a + A_SEG + 1;
+    idx.push(a, b, a + 1, a + 1, b, b + 1);
+  }
+  bellGeo.setIndex(idx);
+  bellMesh = new THREE.Mesh(bellGeo, bellMat); bellMesh.frustumCulled = false; jellySpin.add(bellMesh);
+
+  const segs = MER_N * R_SEG + RING_S.length * A_SEG;
+  latGeo = new THREE.BufferGeometry();
+  latGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(segs * 6), 3));
+  latLines = new THREE.LineSegments(latGeo, lineMaterial(.3, .35, .35));
+  latLines.frustumCulled = false; jellySpin.add(latLines);
+
+  rimGeo = new THREE.BufferGeometry();
+  rimGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((A_SEG + 1) * 3), 3));
+  rimLine = new THREE.Line(rimGeo, lineMaterial(.85, .3, .15));
+  rimLine.frustumCulled = false; jellySpin.add(rimLine);
+
+  gonGeo = new THREE.BufferGeometry();
+  gonGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((A_SEG + 1) * 3), 3));
+  gonLine = new THREE.Line(gonGeo, lineMaterial(.8, .5, .85));
+  gonLine.frustumCulled = false; jellySpin.add(gonLine);
+}
+
+// bell profile at s (0 = apex, 1 = margin): radius PR, height PY0 (y down), normal (PNR, PNY)
+function profile(s) {
+  const cl = pulseAt(jelly.phase - s * 1.1), a = s * Math.PI * .5;
+  const rr = S * (1 - .24 * cl) * (1 + .13 * (1 - cl) * s * s), hh = S * (.72 + .15 * c);
+  PR = rr * Math.pow(Math.sin(a), .72) * (1 + .03 * Math.sin(s * TAU * 2.5 - t * 3) * Math.sin(s * Math.PI));
+  PY0 = -hh * Math.cos(a) - CEN_Y;
+  const nr = hh * Math.sin(a), ny = -rr * Math.cos(a), nl = Math.hypot(nr, ny) || 1;
+  PNR = nr / nl; PNY = ny / nl;
+}
+// local position (three space, y up) of the bell surface at azimuth j, profile s
+let BX = 0, BY = 0, BZ = 0, BNX = 0, BNY = 0, BNZ = 0;
+function bellLocal(j, s) {
+  profile(s);
+  const d = disp[j] * s * s, r = PR + d * PNR;
+  BX = r * phiC[j]; BY = -(PY0 + d * PNY + apexD * (1 - s * s) * (1 - s * s)); BZ = r * phiS[j];
+  BNX = PNR * phiC[j]; BNY = -PNY; BNZ = PNR * phiS[j];
+}
+let SXp = 0, SYp = 0;
+function toScreen(x, y, z) {
+  _v.set(x, y, z).applyMatrix4(jellySpin.matrixWorld).project(camera3);
+  SXp = (_v.x * .5 + .5) * W; SYp = (.5 - _v.y * .5) * H;
+}
+function worldToScreen(x, y, z) {
+  _v.set(x, y, z).project(camera3);
+  SXp = (_v.x * .5 + .5) * W; SYp = (.5 - _v.y * .5) * H;
+}
+
+function computeBell() {
+  c = pulseAt(jelly.phase);
+  const cR = pulseAt(jelly.phase - 1.1);
+  Hh = S * (.72 + .15 * c); Rc = S * (1 - .24 * cR); CEN_Y = -.42 * Hh;
+  cosA = Math.cos(jelly.angle); sinA = Math.sin(jelly.angle);
+  YAW = t * .2 + Math.sin(t * .11) * .6;
+  PITCH = .24 + .05 * Math.sin(t * .17);
+  nodeX = body.x; nodeY = body.y;
+  jellyRoot.position.set(nodeX - W * .5, H * .5 - nodeY, 0);
+  jellyRoot.rotation.z = -jelly.angle;
+  jellyTilt.rotation.x = PITCH;
+  jellySpin.rotation.y = YAW;
+  jellyRoot.updateMatrixWorld(true);
+  U3.uNear.value = camera3.position.z - S * 1.5;
+  U3.uFar.value = camera3.position.z + S * 1.5;
+  U3.colA.value.setHSL(((HUE - 18) % 360 + 360) % 360 / 360, 1, .55);
+  U3.colB.value.setHSL(((HUE + 26) % 360 + 360) % 360 / 360, 1, .62);
+}
+
+function updateBellGeometry() {
+  const pos = bellGeo.attributes.position.array, nrm = bellGeo.attributes.normal.array, sA = bellGeo.attributes.aS.array;
+  let k = 0, sIdx = 0;
+  for (let i = 0; i <= R_SEG; i++) {
+    const s = i / R_SEG;
+    for (let j = 0; j <= A_SEG; j++) {
+      const jj = j % A_SEG;
+      bellLocal(jj, s);
+      pos[k] = BX; pos[k + 1] = BY; pos[k + 2] = BZ;
+      nrm[k] = BNX; nrm[k + 1] = BNY; nrm[k + 2] = BNZ;
+      sA[sIdx++] = s; k += 3;
+      if (i === R_SEG && j < A_SEG) { rimLocal[jj * 3] = BX; rimLocal[jj * 3 + 1] = BY; rimLocal[jj * 3 + 2] = BZ; }
+    }
+  }
+  bellGeo.attributes.position.needsUpdate = true;
+  bellGeo.attributes.normal.needsUpdate = true;
+  bellGeo.attributes.aS.needsUpdate = true;
+
+  const lp = latGeo.attributes.position.array;
+  let o = 0;
+  for (let m = 0; m < MER_N; m++) {
+    const j = Math.round(m / MER_N * A_SEG) % A_SEG;
+    for (let i = 0; i < R_SEG; i++) {
+      bellLocal(j, i / R_SEG); lp[o++] = BX; lp[o++] = BY; lp[o++] = BZ;
+      bellLocal(j, (i + 1) / R_SEG); lp[o++] = BX; lp[o++] = BY; lp[o++] = BZ;
+    }
+  }
+  for (const s of RING_S) for (let j = 0; j < A_SEG; j++) {
+    bellLocal(j, s); lp[o++] = BX; lp[o++] = BY; lp[o++] = BZ;
+    bellLocal((j + 1) % A_SEG, s); lp[o++] = BX; lp[o++] = BY; lp[o++] = BZ;
+  }
+  latGeo.attributes.position.needsUpdate = true;
+
+  const rp = rimGeo.attributes.position.array, gp = gonGeo.attributes.position.array;
+  const gy = .5 * Hh + CEN_Y;
+  for (let j = 0; j <= A_SEG; j++) {
+    const jj = j % A_SEG, q = j * 3;
+    rp[q] = rimLocal[jj * 3]; rp[q + 1] = rimLocal[jj * 3 + 1]; rp[q + 2] = rimLocal[jj * 3 + 2];
+    const a = jj / A_SEG * TAU, rg = Rc * .42 * (1 + .22 * Math.cos(4 * a + t * .8)) * (1 - .1 * c);
+    gp[q] = rg * phiC[jj]; gp[q + 1] = gy; gp[q + 2] = rg * phiS[jj];
+  }
+  rimGeo.attributes.position.needsUpdate = true;
+  gonGeo.attributes.position.needsUpdate = true;
+
+  // screen-space data for interaction and the right-hand overlay
+  bellLocal(0, 0); toScreen(BX, BY, BZ); apexX = SXp; apexY = SYp;
+  const eps = S * .2;
+  let h = 0;
+  for (let j = 0; j < A_SEG; j++) {
+    bellLocal(j, .8);
+    const bx0 = BX, by0 = BY, bz0 = BZ, nx3 = BNX, ny3 = BNY, nz3 = BNZ;
+    toScreen(bx0, by0, bz0);
+    const sx0 = SXp, sy0 = SYp;
+    toScreen(bx0 + nx3 * eps, by0 + ny3 * eps, bz0 + nz3 * eps);
+    let nx = SXp - sx0, ny = SYp - sy0; const nl = Math.hypot(nx, ny) || 1;
+    ring08[j * 4] = sx0; ring08[j * 4 + 1] = sy0; ring08[j * 4 + 2] = nx / nl; ring08[j * 4 + 3] = ny / nl;
+    hullSrc[h++] = sx0; hullSrc[h++] = sy0;
+    toScreen(rimLocal[j * 3], rimLocal[j * 3 + 1], rimLocal[j * 3 + 2]);
+    hullSrc[h++] = SXp; hullSrc[h++] = SYp;
+  }
+  hullSrc[h++] = apexX; hullSrc[h++] = apexY;
+  buildHull(h >> 1);
+}
+
+// convex hull (monotone chain) of the projected bell -> silhouette for the right-hand contour
+const hullIdx = [];
+function buildHull(n) {
+  hullIdx.length = 0;
+  for (let i = 0; i < n; i++) hullIdx.push(i);
+  hullIdx.sort((a, b) => hullSrc[a * 2] - hullSrc[b * 2] || hullSrc[a * 2 + 1] - hullSrc[b * 2 + 1]);
+  const cross = (o, a, b) => (hullSrc[a * 2] - hullSrc[o * 2]) * (hullSrc[b * 2 + 1] - hullSrc[o * 2 + 1]) -
+    (hullSrc[a * 2 + 1] - hullSrc[o * 2 + 1]) * (hullSrc[b * 2] - hullSrc[o * 2]);
+  const st = [];
+  for (let pass = 0; pass < 2; pass++) {
+    const start = st.length + 1;
+    const order = pass ? hullIdx.slice().reverse() : hullIdx;
+    for (const i of order) {
+      while (st.length >= start && cross(st[st.length - 2], st[st.length - 1], i) <= 0) st.pop();
+      st.push(i);
+    }
+    st.pop();
+  }
+  let o = 0;
+  for (const i of st) { hullBuf[o++] = hullSrc[i * 2]; hullBuf[o++] = hullSrc[i * 2 + 1]; }
+  outline = hullBuf.subarray(0, Math.max(6, o));
+}
+
+function updateCapSprings(dt) {
+  extF.fill(0);
+  let apexExt = 0;
+  if (inter.active) {
+    const Rinf = S * 1.05, sp = Math.min(inter.speed / (S * 5), 1.5), gain = S * (22 + 26 * sp) * inter.str;
+    for (let j = 0; j < A_SEG; j++) {
+      const sx0 = ring08[j * 4], sy0 = ring08[j * 4 + 1], nX = ring08[j * 4 + 2], nY = ring08[j * 4 + 3];
+      const dx = sx0 - inter.x, dy = sy0 - inter.y, d = Math.hypot(dx, dy);
+      if (d < Rinf) { const f = 1 - d / Rinf; extF[j] = f * f * ((dx * nX + dy * nY) / (d || 1)) * gain; }
+    }
+    const dya = apexY - inter.y, da = Math.hypot(apexX - inter.x, dya), Ra = S * .95;
+    if (da < Ra) { const f = 1 - da / Ra; apexExt = f * f * gain * .4 * (dya / (da || 1)); }
+  }
+  const steps = 3, h = Math.min(dt, .05) / steps, K = 70, D = 6.5, C = 2200, lim = S * .42;
+  for (let s = 0; s < steps; s++) {
+    for (let j = 0; j < A_SEG; j++) {
+      const lap = disp[(j + A_SEG - 1) % A_SEG] + disp[(j + 1) % A_SEG] - 2 * disp[j];
+      dvel[j] += (-K * disp[j] - D * dvel[j] + C * lap + extF[j]) * h;
+    }
+    for (let j = 0; j < A_SEG; j++) disp[j] = clamp(disp[j] + dvel[j] * h, -lim, lim);
+    apexV += (-K * apexD - D * apexV + apexExt) * h;
+    apexD = clamp(apexD + apexV * h, -lim * .5, lim * .5);
+  }
+  let mxd = Math.abs(apexD);
+  for (let j = 0; j < A_SEG; j++) if (Math.abs(disp[j]) > mxd) mxd = Math.abs(disp[j]);
+  strain += (mxd / S - strain) * .2;
+  updateBellGeometry();
+}
+
+function poke(px, py, power) {
+  const Rp = S * 1.7;
+  for (let j = 0; j < A_SEG; j++) {
+    const sx0 = ring08[j * 4], sy0 = ring08[j * 4 + 1];
+    const dx = sx0 - px, dy = sy0 - py, d = Math.hypot(dx, dy) || 1;
+    if (d < Rp) dvel[j] += (1 - d / Rp) * ((dx * ring08[j * 4 + 2] + dy * ring08[j * 4 + 3]) / d) * S * 6 * power;
+    dvel[j] += Math.sin(j * .55 + t * 3) * S * .9 * power;
+  }
+  const da = Math.hypot(apexX - px, apexY - py);
+  if (da < Rp) apexV += (1 - da / Rp) * S * 2.2 * power * (apexY - py > 0 ? 1 : -1);
+  pulseBoost = Math.min(1.6, pulseBoost + .9 * power);
+  const dx = body.x - px, dy = body.y - py, d = Math.hypot(dx, dy) || 1;
+  if (d < S * 1.8) { body.vx += dx / d * S * .15 * power; body.vy += dy / d * S * .9 * power; }
+}
+
+// ================= marginal tentacles + oral arms: 2D verlet ropes on the 3D bell =================
+// The bell is a three.js mesh; its rim is projected back to screen pixels and the ropes
+// hang from those anchors in 2D, which keeps the hand-tuned tentacle feel.
+let hairs = [], arms = [], fresh = true, armStretch = 1;
+let PX = 0, PY = 0, PZ = 0, PK = 1;
+
+function projLocal(x, y, z) {
+  _w.set(x, y, z).applyMatrix4(jellySpin.matrixWorld);
+  PZ = -_w.z;                                   // > 0 = behind the bell centre
+  _v.copy(_w).project(camera3);
+  PX = (_v.x * .5 + .5) * W; PY = (.5 - _v.y * .5) * H;
+  PK = camera3.position.z / (camera3.position.z + PZ);
+}
+function rimAt(phi) {
+  const j = ((Math.round(phi / TAU * A_SEG) % A_SEG) + A_SEG) % A_SEG;
+  projLocal(rimLocal[j * 3], rimLocal[j * 3 + 1], rimLocal[j * 3 + 2]);
+}
+
+function rope(n) { return { p: new Float32Array((n + 1) * 2), pp: new Float32Array((n + 1) * 2) }; }
+function initTentacles() {
+  hairs = []; arms = [];
+  const NH = 72;
+  for (let i = 0; i < NH; i++) {
+    const n = 20 + (i * 7) % 8;
+    hairs.push({ phi: i / NH * TAU, n, seg0: S * .1 * (.85 + .3 * Math.abs(Math.sin(i * 12.99))), seg: 0,
+      off: i * 1.37, back: false, k: 1, xr: 0, ...rope(n) });
+  }
+  for (let i = 0; i < 5; i++) {
+    const n = 34;
+    arms.push({ phi: (i + .5) / 5 * TAU, n, seg0: S * .068 * (1 + .12 * Math.cos(i * 2.1)), seg: 0,
+      off: i * 2.13 + .4, back: false, k: 1, xr: 0, ...rope(n),
+      ea: new Float32Array((n + 1) * 2), eb: new Float32Array((n + 1) * 2),
+      ma: new Float32Array((n + 1) * 2), mb: new Float32Array((n + 1) * 2) });
+  }
+  fresh = true;
+}
+
+function stepRope(r, ax, ay, dt, pullK, retain, latFn) {
+  const p = r.p, pp = r.pp, n = r.n, dX = -sinA, dY = cosA, sX = cosA, sY = sinA;
+  p[0] = pp[0] = ax; p[1] = pp[1] = ay;
+  for (let i = 1; i <= n; i++) {
+    const k = i / n, ii = i * 2;
+    const lat = latFn(r, i, k);
+    let rX = dX + sX * lat, rY = dY + sY * lat; const rl = Math.hypot(rX, rY) || 1; rX /= rl; rY /= rl;
+    const tx = p[ii - 2] + rX * r.seg, ty = p[ii - 1] + rY * r.seg;
+    if (fresh) { p[ii] = pp[ii] = tx; p[ii + 1] = pp[ii + 1] = ty; continue; }
+    const vx = (p[ii] - pp[ii]) * retain, vy = (p[ii + 1] - pp[ii + 1]) * retain;
+    pp[ii] = p[ii]; pp[ii + 1] = p[ii + 1];
+    let nx = p[ii] + vx, ny = p[ii + 1] + vy;
+    const pull = ease(pullK * (1 - .75 * k), dt);
+    nx += (tx - nx) * pull; ny += (ty - ny) * pull;
+    const ddx = nx - p[ii - 2], ddy = ny - p[ii - 1], d = Math.hypot(ddx, ddy) || 1;
+    p[ii] = p[ii - 2] + ddx / d * r.seg; p[ii + 1] = p[ii - 1] + ddy / d * r.seg;
+  }
+}
+// r.xr: how far the anchor sits from the body axis on screen (-1 left .. +1 right)
+const hairLat = (r, i, k) =>
+  r.xr * ((.3 + .1 * (1 - c)) - .85 * k) + Math.sin(t * .6 - i * .12 + r.off) * .1 * k + Math.sin(t * .22 + r.off * 1.7) * .06 * k;
+const armLat = (r, i, k) => r.xr * .18 * (1 - k * .3) + Math.sin(t * .5 - i * .06 + r.off) * .04 * k;
+
+function updateTentacles(dt) {
+  const retainH = Math.pow(.8, dt * 60), retainA = Math.pow(.9, dt * 60);
+  const stretchT = 1 + clamp(-body.vy / (S * 8), -.08, .12) + .04 * c;
+  armStretch += (stretchT - armStretch) * ease(.08, dt);
+  const Rp = Math.max(1, Rc);
+  for (const hr of hairs) {
+    rimAt(hr.phi);
+    hr.back = PZ > 0; hr.k = PK;
+    hr.xr = clamp((PX - nodeX) / (Rp * PK), -1, 1);
+    hr.seg = hr.seg0 * PK;
+    stepRope(hr, PX, PY, dt, .06, retainH, hairLat);
+  }
+  for (const am of arms) {
+    const r = Rc * .34;
+    projLocal(r * Math.cos(am.phi), -CEN_Y * .3, r * Math.sin(am.phi));
+    am.back = PZ > 0; am.k = PK;
+    am.xr = clamp((PX - nodeX) / (Rp * PK), -1, 1);
+    am.seg = am.seg0 * armStretch * PK;
+    stepRope(am, PX, PY, dt, .2, retainA * .9, armLat);
+    const p = am.p, n = am.n, sc = am.k;
+    for (let i = 0; i <= n; i++) {
+      const i0 = Math.max(0, i - 1), i1 = Math.min(n, i + 1);
+      const tx = p[i1 * 2] - p[i0 * 2], ty = p[i1 * 2 + 1] - p[i0 * 2 + 1], l = Math.hypot(tx, ty) || 1;
+      const nx = -ty / l, ny = tx / l, k = i / n;
+      const env = Math.sin(Math.min(1, k * 1.15 + .08) * Math.PI);
+      const w = S * sc * (.016 + .046 * env) * (.9 + .1 * Math.sin(i * .7 + t * .8 + am.off));
+      const ruf = S * sc * .009 * Math.sin(i * 2.6 + t * 2 + am.off) * (.3 + k);
+      const ruf2 = S * sc * .007 * Math.sin(i * 3.4 - t * 1.6 + am.off * 2) * (.3 + k);
+      const X = p[i * 2], Y = p[i * 2 + 1], q = i * 2;
+      am.ea[q] = X + nx * (w + ruf); am.ea[q + 1] = Y + ny * (w + ruf);
+      am.eb[q] = X - nx * (w - ruf * .7); am.eb[q + 1] = Y - ny * (w - ruf * .7);
+      am.ma[q] = X + nx * (w * .45 + ruf2); am.ma[q + 1] = Y + ny * (w * .45 + ruf2);
+      am.mb[q] = X - nx * (w * .45 - ruf2); am.mb[q + 1] = Y - ny * (w * .45 - ruf2);
+    }
+  }
+  fresh = false;
+}
+
+// ================= path helpers =================
+function polyPath(ctx, arr, k, close) {
+  ctx.beginPath(); ctx.moveTo(arr[0] * k, arr[1] * k);
+  for (let i = 2; i < arr.length; i += 2) ctx.lineTo(arr[i] * k, arr[i + 1] * k);
+  if (close) ctx.closePath();
+}
+function smoothClosed(ctx, arr, k) {
+  const n = arr.length / 2;
+  ctx.beginPath();
+  ctx.moveTo((arr[(n - 1) * 2] + arr[0]) * .5 * k, (arr[(n - 1) * 2 + 1] + arr[1]) * .5 * k);
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    ctx.quadraticCurveTo(arr[i * 2] * k, arr[i * 2 + 1] * k, (arr[i * 2] + arr[j * 2]) * .5 * k, (arr[i * 2 + 1] + arr[j * 2 + 1]) * .5 * k);
+  }
+  ctx.closePath();
+}
+
+// ================= hybrid compositing: 3D bell (webgl) + 2D tentacles =================
+function curve(ctx, p, a, b, k) {
+  ctx.beginPath();
+  ctx.moveTo(p[a * 2] * k, p[a * 2 + 1] * k);
+  for (let i = a + 1; i < b; i++)
+    ctx.quadraticCurveTo(p[i * 2] * k, p[i * 2 + 1] * k, (p[i * 2] + p[i * 2 + 2]) * .5 * k, (p[i * 2 + 1] + p[i * 2 + 3]) * .5 * k);
+  ctx.lineTo(p[b * 2] * k, p[b * 2 + 1] * k);
+  ctx.stroke();
+}
+function hairBatch(ctx, back, fa, fb, k) {
+  ctx.beginPath();
+  for (const hr of hairs) {
+    if (hr.back !== back) continue;
+    const a = Math.floor(hr.n * fa), b = Math.floor(hr.n * fb), p = hr.p;
+    ctx.moveTo(p[a * 2] * k, p[a * 2 + 1] * k);
+    for (let i = a + 1; i <= b; i++) ctx.lineTo(p[i * 2] * k, p[i * 2 + 1] * k);
+  }
+  ctx.stroke();
+}
+function ribbonPath(ctx, am, k) {
+  const n = am.n;
+  ctx.beginPath(); ctx.moveTo(am.ea[0] * k, am.ea[1] * k);
+  for (let i = 1; i <= n; i++) ctx.lineTo(am.ea[i * 2] * k, am.ea[i * 2 + 1] * k);
+  for (let i = n; i >= 0; i--) ctx.lineTo(am.eb[i * 2] * k, am.eb[i * 2 + 1] * k);
+  ctx.closePath();
+}
+function armsDraw(ctx, back, dim) {
+  for (const am of arms) {
+    if (am.back !== back) continue;
+    ctx.fillStyle = hsl(-28, 65, .07 * dim); ribbonPath(ctx, am, 1); ctx.fill();
+    ctx.strokeStyle = hsl(-22, 70, .16 * dim); ctx.lineWidth = 2.4 * am.k; curve(ctx, am.p, 0, am.n, 1);
+    ctx.strokeStyle = hsl(-30, 78, .5 * dim); ctx.lineWidth = 1.05;
+    curve(ctx, am.ea, 0, am.n, 1); curve(ctx, am.eb, 0, am.n, 1);
+    ctx.strokeStyle = hsl(-18, 85, .26 * dim); ctx.lineWidth = .75;
+    curve(ctx, am.ma, 0, am.n, 1); curve(ctx, am.mb, 0, am.n, 1);
+    if (back) continue;
+    ctx.fillStyle = hsl(-35, 90, .7);
+    for (let i = 3; i <= am.n; i += 4) { ctx.beginPath(); ctx.arc(am.ea[i * 2], am.ea[i * 2 + 1], .9, 0, TAU); ctx.fill(); }
+  }
+}
+function drawTentacles(ctx, back) {
+  if (back) {
+    ctx.strokeStyle = hsl(12, 70, .16); ctx.lineWidth = .7; hairBatch(ctx, true, 0, .5, 1);
+    ctx.strokeStyle = hsl(12, 70, .09); ctx.lineWidth = .45; hairBatch(ctx, true, .5, 1, 1);
+    armsDraw(ctx, true, .45);
+  } else {
+    armsDraw(ctx, false, 1);
+    ctx.strokeStyle = hsl(10, 85, .4); ctx.lineWidth = .85; hairBatch(ctx, false, 0, .35, 1);
+    ctx.strokeStyle = hsl(10, 85, .28); ctx.lineWidth = .6; hairBatch(ctx, false, .35, .7, 1);
+    ctx.strokeStyle = hsl(10, 85, .17); ctx.lineWidth = .4; hairBatch(ctx, false, .7, 1, 1);
+  }
+}
+
+// webgl bell rendered first, then the 2D tentacles composited around it on the scene canvas
+function renderThree() {
+  RND.setRenderTarget(null);
+  RND.setClearColor(0x000000, 0);
+  RND.clear(true, true, true);
+  RND.render(scene3, camera3);
+  sx.clearRect(0, 0, W, H);
+  sx.globalCompositeOperation = 'lighter';
+  sx.lineCap = 'round'; sx.lineJoin = 'round';
+  drawTentacles(sx, true);
+  sx.drawImage(threeCanvas, 0, 0, W, H);
+  drawTentacles(sx, false);
+  sx.globalCompositeOperation = 'source-over';
+}
+
+// ================= silhouette mask for the matrix =================
+function drawJellyMask(ctx, k) {
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, MC, MR);
+  ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+  ctx.fillStyle = 'rgb(105,105,105)'; polyPath(ctx, outline, k, true); ctx.fill();
+  ctx.strokeStyle = 'rgb(110,110,110)'; ctx.lineWidth = 1; polyPath(ctx, outline, k, true); ctx.stroke();
+  ctx.fillStyle = 'rgb(120,120,120)';
+  for (const am of arms) { ribbonPath(ctx, am, k); ctx.fill(); }
+  ctx.strokeStyle = 'rgb(85,85,85)'; ctx.lineWidth = .8; hairBatch(ctx, true, 0, 1, k);
+  ctx.strokeStyle = 'rgb(170,170,170)'; ctx.lineWidth = 1; hairBatch(ctx, false, 0, 1, k);
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// ================= particles =================
+let parts = [];
+function initParticles() {
+  const n = Math.round(clamp(W * H / 5000, 60, 180));
+  parts = [];
+  for (let i = 0; i < n; i++) parts.push({ x: Math.random() * W, y: Math.random() * H, z: Math.random(), ph: Math.random() * TAU, vx: 0, vy: 0 });
+}
+function updateDrawParticles(ctx, dt) {
+  ctx.globalCompositeOperation = 'lighter';
+  const buckets = [hsl(-20, 80, .12), hsl(-20, 85, .25), hsl(-30, 90, .4), hc(-40, .75, .6)];
+  const rr = S * 1.6;
+  for (const p of parts) {
+    p.y -= (3 + p.z * 12) * dt; p.x += Math.sin(t * .3 + p.ph) * (2 + p.z * 4) * dt;
+    const dx = p.x - nodeX, dy = p.y - nodeY, d2 = dx * dx + dy * dy;
+    if (d2 < rr * rr) { const d = Math.sqrt(d2) || 1, f = (1 - d / rr) * 60 * dt; p.vx += dx / d * f; p.vy += dy / d * f; }
+    p.vx *= .94; p.vy *= .94; p.x += p.vx; p.y += p.vy;
+    if (p.y < -5) { p.y = H + 5; p.x = Math.random() * W; }
+    if (p.x < -5) p.x = W + 5; else if (p.x > W + 5) p.x = -5;
+    const tw = .5 + .5 * Math.sin(t * 1.7 + p.ph);
+    ctx.fillStyle = buckets[Math.min(3, (p.z * 3.99) | 0)];
+    ctx.beginPath(); ctx.arc(p.x, p.y, (.4 + p.z * 1.4) * (.6 + .4 * tw), 0, TAU); ctx.fill();
+  }
+  ctx.globalCompositeOperation = 'source-over';
+}
+
+// ================= left render =================
+function renderLeft(dt) {
+  lx.globalCompositeOperation = 'source-over';
+  lx.fillStyle = '#050807'; lx.fillRect(0, 0, W, H);
+  lx.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 3; i++) {
+    const x = W * (.2 + .3 * i) + Math.sin(t * .1 + i * 2) * W * .06;
+    const gr = lx.createLinearGradient(x, 0, x - W * .25, H);
+    gr.addColorStop(0, hsl(10, 70, .04)); gr.addColorStop(1, hsl(10, 70, 0));
+    lx.fillStyle = gr;
+    lx.beginPath(); lx.moveTo(x - 30, 0); lx.lineTo(x + 50, 0); lx.lineTo(x - W * .2, H); lx.lineTo(x - W * .35, H); lx.fill();
+  }
+  const hg = lx.createRadialGradient(nodeX, nodeY, 0, nodeX, nodeY, S * 3.2);
+  hg.addColorStop(0, hsl(-10, 90, .09 + .05 * c)); hg.addColorStop(1, hsl(-10, 90, 0));
+  lx.fillStyle = hg; lx.fillRect(0, 0, W, H);
+  lx.globalCompositeOperation = 'source-over';
+  updateDrawParticles(lx, dt);
+
+  renderThree();
+  bx.clearRect(0, 0, bloom.width, bloom.height);
+  if (hasFilter) bx.filter = 'blur(3px)';
+  bx.drawImage(scene, 0, 0, bloom.width, bloom.height);
+  if (hasFilter) bx.filter = 'none';
+  lx.globalCompositeOperation = 'lighter';
+  lx.drawImage(bloom, 0, 0, W, H); lx.drawImage(bloom, 0, 0, W, H);
+  lx.drawImage(scene, 0, 0, W, H);
+  lx.globalCompositeOperation = 'source-over';
+
+  if (inter.active) {
+    lx.strokeStyle = hc(-30, .7, .35); lx.lineWidth = 1;
+    lx.beginPath(); lx.arc(inter.x, inter.y, 10 + 4 * Math.sin(t * 6), 0, TAU); lx.stroke();
+  }
+  const vg = lx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .3, W / 2, H / 2, Math.max(W, H) * .75);
+  vg.addColorStop(0, 'rgba(5,8,7,0)'); vg.addColorStop(1, 'rgba(5,8,7,0.85)');
+  lx.fillStyle = vg; lx.fillRect(0, 0, W, H);
+}
+
+// ================= vector handles (ported from the Originkit wordmark overlay) =================
+// Works in the shader's space: x in [0, aspect], y from the bottom up, 1 unit = canvas height.
+const HANDLES = 3, CELL_ASPECT = .6, DRIFT_X = .08, DRIFT_Y = .04;
+const DRIFT_RATE = 1.3, DRIFT_RATE_Y = 1.3 * 1.3;
+const HANDLE_SPREAD = 27, HANDLE_SIZE = 109, DAMP_REF = 20, HANDLE_DAMPING = 60, LABEL_MAX = .72;
+const hCells = [], hVerts = [], snapPool = [];
+for (let i = 0; i < HANDLES; i++) { hCells.push({ x: 0, y: 0 }); hVerts.push({ x: 0, y: 0 }); }
+for (let i = 0; i < 9; i++) snapPool.push({ x: 0, y: 0, d: 0 });
+const hEased = { x: 0, y: .5 };
+let driftT = 0, handlesReady = false;
+
+function snapHandles(x, y, cw, ch) {
+  const cx = Math.floor(x / cw), cy = Math.floor(y / ch);
+  let n = 0;
+  for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+    const px = (cx + i + .5) * cw, py = (cy + j + .5) * ch, s = snapPool[n++];
+    s.x = px; s.y = py; s.d = Math.hypot(px - x, py - y);
+  }
+  snapPool.sort((a, b) => a.d - b.d);
+  for (let i = 0; i < HANDLES; i++) { hCells[i].x = snapPool[i + 1].x; hCells[i].y = snapPool[i + 1].y; }
+}
+
+function vectorHandles(ctx, dt) {
+  const aspect = W / H, cw = HANDLE_SPREAD / 100, ch = cw * CELL_ASPECT;
+  const srcX = inter.active ? inter.x : nodeX, srcY = inter.active ? inter.y : nodeY;
+  const tx = srcX / H, ty = 1 - srcY / H;
+  if (!handlesReady) { hEased.x = tx; hEased.y = ty; handlesReady = true; }
+  const damp = clamp(HANDLE_DAMPING / 100 * DAMP_REF * dt, 0, 1);
+  hEased.x += (tx - hEased.x) * damp; hEased.y += (ty - hEased.y) * damp;
+  snapHandles(hEased.x, hEased.y, cw, ch);
+
+  driftT += dt;
+  for (let i = 0; i < HANDLES; i++) {
+    const cell = hCells[i];
+    const sx = Math.round(cell.x / cw - .5), sy = Math.round(cell.y / ch - .5);
+    const h1 = fract(Math.sin(sx * 127.1 + sy * 311.7) * 43758.5453);
+    const h2 = fract(Math.sin(sx * 269.5 + sy * 183.3) * 43758.5453);
+    hVerts[i].x = cell.x + DRIFT_X * cw * Math.sin(driftT * DRIFT_RATE + h1 * TAU);
+    hVerts[i].y = cell.y + DRIFT_Y * ch * Math.sin(driftT * DRIFT_RATE_Y + h2 * TAU);
+  }
+
+  const half = HANDLE_SIZE / 2 / 800 * H, dash = H / 200;
+  ctx.lineWidth = 1;
+  ctx.lineWidth = 1.2; ctx.setLineDash([dash, dash]);
+  for (let i = 0; i < HANDLES; i++) {
+    const a = hVerts[i], b = hVerts[(i + 1) % HANDLES];
+    const ax = a.x * H, ay = (1 - a.y) * H, bx2 = b.x * H, by = (1 - b.y) * H;
+    ctx.strokeStyle = `rgba(235,255,245,${(.62 * (.45 + .55 * clamp((ay + by) * .5 / H, 0, 1))).toFixed(3)})`;
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx2, by); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+  ctx.font = '11px ui-monospace,Consolas,monospace';
+  for (let i = 0; i < HANDLES; i++) {
+    const v = hVerts[i], X = v.x * H, Y = (1 - v.y) * H, fade = .45 + .55 * clamp(Y / H, 0, 1);
+    ctx.strokeStyle = `rgba(235,255,245,${(.85 * fade).toFixed(3)})`;
+    ctx.strokeRect(X - half, Y - half, half * 2, half * 2);
+    ctx.fillStyle = `rgba(235,255,245,${(LABEL_MAX * fade).toFixed(3)})`;
+    const gx = Math.round(clamp(v.x / aspect * 100, 0, 100)), gy = Math.round(clamp(v.y * 100, 0, 100));
+    ctx.fillText(`${gx}, ${gy}`, X - half + 2, Y - half + 12);
+  }
+  ctx.font = '10px ui-monospace,Consolas,monospace';
+}
+
+
+function label(ctx, txt, x, y, solid) {
+  const w = ctx.measureText(txt).width + 8;
+  ctx.fillStyle = solid ? hc(-30, .7) : 'rgba(5,8,7,0.8)'; ctx.fillRect(x, y - 11, w, 13);
+  ctx.fillStyle = solid ? '#050807' : hc(-20, .72); ctx.fillText(txt, x + 4, y - 1);
+}
+
+const TRAIL = 150, trail = new Float32Array(TRAIL * 2); let trailHead = 0, trailCount = 0;
+const PULSE_N = 140, pulseHist = new Float32Array(PULSE_N); let pulseHead = 0;
+let fps = 60, cellsOn = 0, cellSize = 10, lodE = 0;
+const flashBuf = new Float32Array(3 * 6000);
+
+// ================= right render =================
+function renderRight(dt) {
+  rx.globalCompositeOperation = 'source-over';
+  rx.fillStyle = '#050807'; rx.fillRect(0, 0, W, H);
+  rx.drawImage(gridC, 0, 0, W, H);
+
+  drawJellyMask(mx, 1 / MCELL);
+  const data = mx.getImageData(0, 0, MC, MR).data;
+  const sampleM = (x, y) => {
+    const i = clamp((x / MCELL) | 0, 0, MC - 1), j = clamp((y / MCELL) | 0, 0, MR - 1);
+    return data[(j * MC + i) * 4];
+  };
+
+  // LOD breathing: dwell at fine / macro, lerp between them
+  const raw = .5 - .5 * Math.cos(t * TAU / 10);
+  lodE = smooth(smooth(raw));
+  cellSize = lerp(CS_MIN, CS_MAX, lodE) * (1 + .05 * c);
+  const cs = cellSize;
+  const csd = cs * DPR;
+  let atl = atlases[atlases.length - 1];
+  for (const a of atlases) if (a.cp >= csd) { atl = a; break; }
+  const cp = atl.cp, acv = atl.cv;
+
+  const gi0 = -Math.ceil(nodeX / cs), gj0 = -Math.ceil(nodeY / cs);
+  const x0 = nodeX + gi0 * cs, y0 = nodeY + gj0 * cs;
+  const ni = Math.ceil((W - x0) / cs), nj = Math.ceil((H - y0) / cs);
+  const multi = cs > MCELL * 1.8, tick = (t * 14) | 0;
+  let on = 0, nf = 0;
+  mcx.globalCompositeOperation = 'source-over';
+  mcx.clearRect(0, 0, W, H);
+  for (let j = 0; j < nj; j++) {
+    const y = y0 + j * cs;
+    // one digit per row (reference style); each row re-rolls on its own slow cadence
+    const gj = gj0 + j, rowD = (ihash(7, gj) + ((tick + ihash(3, gj)) >> 5)) % 10;
+    for (let i = 0; i < ni; i++) {
+      const x = x0 + i * cs;
+      let v;
+      if (multi) {
+        v = Math.max(sampleM(x + cs * .3, y + cs * .3), sampleM(x + cs * .7, y + cs * .3), sampleM(x + cs * .3, y + cs * .7), sampleM(x + cs * .7, y + cs * .7));
+      } else v = sampleM(x + cs * .5, y + cs * .5);
+      const h = ihash(gi0 + i, gj0 + j);
+      if (v < 16) {
+        if (h < 18 && (((tick + h) >> 4) & 3) === 0) mcx.drawImage(acv, rowD * cp, 0, cp, cp, x, y, cs, cs);
+        continue;
+      }
+      on++;
+      const lvl = v > 220 ? 4 : 1 + ((v * 3) >> 8);
+      const d = rowD;
+      const mi = clamp(((x + cs * .5) / MCELL) | 0, 0, MC - 1), mj = clamp(((y + cs * .5) / MCELL) | 0, 0, MR - 1);
+      if (Math.abs(v - prevMask[mj * MC + mi]) > 45 && nf < 6000) {
+        flashBuf[nf * 3] = x; flashBuf[nf * 3 + 1] = y; flashBuf[nf * 3 + 2] = d; nf++;
+      }
+      mcx.drawImage(acv, d * cp, lvl * cp, cp, cp, x, y, cs, cs);
+    }
+  }
+  for (let q = 0; q < MC * MR; q++) prevMask[q] = data[q * 4];
+  cellsOn = on;
+  // tint the white matrix with the live palette
+  mcx.globalCompositeOperation = 'source-in';
+  const tg = mcx.createLinearGradient(0, 0, W * .3, H);
+  tg.addColorStop(0, hc(28, .62)); tg.addColorStop(.5, hc(0, .58)); tg.addColorStop(1, hc(-32, .66));
+  mcx.fillStyle = tg; mcx.fillRect(0, 0, W, H);
+  mcx.globalCompositeOperation = 'source-over';
+  rx.drawImage(matC, 0, 0, W, H);
+  if (nf) {
+    rx.globalCompositeOperation = 'lighter'; rx.globalAlpha = .55;
+    for (let q = 0; q < nf; q++) rx.drawImage(acv, flashBuf[q * 3 + 2] * cp, 4 * cp, cp, cp, flashBuf[q * 3], flashBuf[q * 3 + 1], cs, cs);
+    rx.globalAlpha = 1; rx.globalCompositeOperation = 'source-over';
+  }
+
+  // ---------- overlays ----------
+  rx.font = '10px ui-monospace,Consolas,monospace';
+  rx.lineWidth = 1;
+  rx.strokeStyle = hc(15, .6, .3); smoothClosed(rx, outline, 1); rx.stroke();
+
+  rx.setLineDash([2, 5]); rx.strokeStyle = hc(-20, .6, .22);
+  rx.beginPath(); rx.moveTo(0, nodeY); rx.lineTo(W, nodeY); rx.moveTo(nodeX, 0); rx.lineTo(nodeX, H); rx.stroke();
+  rx.setLineDash([]);
+  label(rx, `X ${nodeX.toFixed(1)}`, Math.min(nodeX + 4, W - 70), 26);
+  label(rx, `Y ${nodeY.toFixed(1)}`, W - 72, clamp(nodeY - 4, 40, H - 10));
+
+  if (trailCount > 1) {
+    rx.strokeStyle = hc(-20, .6, .35); rx.beginPath();
+    for (let k = 0; k < trailCount; k++) {
+      const q = ((trailHead - trailCount + k + TRAIL) % TRAIL) * 2;
+      k ? rx.lineTo(trail[q], trail[q + 1]) : rx.moveTo(trail[q], trail[q + 1]);
+    }
+    rx.stroke();
+  }
+
+
+  vectorHandles(rx, dt);
+
+  if (inter.active) {
+    rx.strokeStyle = hc(-40, .8); rx.beginPath();
+    rx.arc(inter.x, inter.y, 12, t * 3, t * 3 + Math.PI * 1.4); rx.stroke();
+    label(rx, `PROBE  v=${inter.speed.toFixed(0)}`, inter.x + 16, inter.y - 8);
+  }
+  rx.strokeStyle = hc(-40, .9); rx.beginPath(); rx.arc(nodeX, nodeY, 5 + 3 * c, 0, TAU); rx.stroke();
+  label(rx, `NODE_0  h=${(Hh / S).toFixed(2)}  c=${c.toFixed(2)}`, nodeX + 10, nodeY - 10);
+
+  // telemetry panel
+  const lines = [
+    ['NODE.POS', `${(nodeX / W).toFixed(3)} , ${(nodeY / H).toFixed(3)}`],
+    ['NODE.VEL', `${Math.hypot(body.vx, body.vy).toFixed(1)} px/s`],
+    ['TILT θ', `${(jelly.angle * 180 / Math.PI).toFixed(2)}°`],
+    ['PULSE', `c=${c.toFixed(3)}  +${pulseBoost.toFixed(2)}`],
+    ['CAP.STRAIN', strain.toFixed(3)],
+    ['GRID.CELL', `${cs.toFixed(1)} px`],
+    ['CELLS.ON', `${cellsOn}`],
+    ['HUE', `${HUE.toFixed(1)}°`],
+    ['INPUT', inputMode],
+    ['FPS', fps.toFixed(0)],
+  ];
+  const pw = 214, ph = lines.length * 14 + 40, px = W - pw - 14, py = 48;
+  rx.fillStyle = 'rgba(5,8,7,0.8)'; rx.fillRect(px, py, pw, ph);
+  rx.strokeStyle = hc(-20, .6, .5); rx.strokeRect(px + .5, py + .5, pw, ph);
+  lines.forEach(([k, v], i) => {
+    rx.fillStyle = hc(25, .65, .75); rx.fillText(k, px + 10, py + 18 + i * 14);
+    rx.fillStyle = k === 'INPUT' ? hc(-40, .85) : hc(-20, .72); rx.fillText(v, px + 96, py + 18 + i * 14);
+  });
+  const lyb = py + ph - 16;
+  rx.fillStyle = hc(25, .65, .75); rx.fillText('LOD', px + 10, lyb + 8);
+  rx.fillText('fine', px + 40, lyb + 8); rx.fillText('macro', px + pw - 40, lyb + 8);
+  const barX = px + 72, barW = pw - 120;
+  rx.strokeStyle = hc(-20, .6, .5); rx.strokeRect(barX + .5, lyb + .5, barW, 8);
+  rx.fillStyle = hc(-30, .7); rx.fillRect(barX + 1, lyb + 1, (barW - 1) * lodE, 7);
+
+  const sw = pw, sh = 38, sxp = px, syp = py + ph + 8;
+  rx.fillStyle = 'rgba(5,8,7,0.8)'; rx.fillRect(sxp, syp, sw, sh + 14);
+  rx.fillStyle = hc(25, .65, .75); rx.fillText('PULSE.WAVEFORM', sxp + 6, syp + 11);
+  rx.strokeStyle = hc(-35, .7); rx.beginPath();
+  for (let i = 0; i < PULSE_N; i++) {
+    const v = pulseHist[(pulseHead + i) % PULSE_N];
+    const X = sxp + 4 + i / (PULSE_N - 1) * (sw - 8), Y = syp + 14 + sh - 4 - v * (sh - 8);
+    i ? rx.lineTo(X, Y) : rx.moveTo(X, Y);
+  }
+  rx.stroke();
+}
+
+// ================= cross-canvas telemetry links =================
+function bez(a, b, c1, c2, s) {
+  const u = 1 - s;
+  return u * u * u * a + 3 * u * u * s * c1 + 3 * u * s * s * c2 + s * s * s * b;
+}
+function renderLinks() {
+  kx.clearRect(0, 0, innerWidth, innerHeight);
+  const pts = [[nodeX, nodeY]];
+  for (const i of [0, 2, 4]) { const am = arms[i], q = am.n * 2; pts.push([am.p[q], am.p[q + 1]]); }
+  pts.push([apexX, apexY]);
+  for (const hi of [30, 62]) { const hr = hairs[hi]; if (hr) { const q = hr.n * 2; pts.push([hr.p[q], hr.p[q + 1]]); } }
+  kx.lineCap = 'round';
+  pts.forEach(([x, y], idx) => {
+    const ax = LR.left + x, ay = LR.top + y, bx2 = RR.left + x, by = RR.top + y;
+    const dx = bx2 - ax, dy = by - ay, len = Math.hypot(dx, dy) || 1, pxn = -dy / len, pyn = dx / len;
+    const bend = S * (.9 * c - .35 + .3 * Math.sin(t * .9 + idx * 1.7)) * (idx % 2 ? 1 : -1) * (idx ? 1 : .6);
+    const c1x = ax + dx * .33 + pxn * bend * 1.3, c1y = ay + dy * .33 + pyn * bend * 1.3;
+    const c2x = ax + dx * .66 - pxn * bend * .8, c2y = ay + dy * .66 - pyn * bend * .8;
+    const alpha = (idx ? .18 : .32) + .3 * c;
+    kx.strokeStyle = hc(-20 + idx * 8, .65, alpha);
+    kx.lineWidth = (idx ? .6 : 1) + 1.1 * c;
+    kx.setLineDash([6 + 10 * c, 9]); kx.lineDashOffset = -t * 60 * (1 + c) - idx * 7;
+    kx.beginPath(); kx.moveTo(ax, ay); kx.bezierCurveTo(c1x, c1y, c2x, c2y, bx2, by); kx.stroke();
+    kx.setLineDash([]);
+    kx.fillStyle = hc(-40, .85, .6 + .4 * c);
+    for (let p = 0; p < 2; p++) {
+      const s = (t * .3 * (1 + c) + idx * .23 + p * .5) % 1;
+      kx.beginPath(); kx.arc(bez(ax, bx2, c1x, c2x, s), bez(ay, by, c1y, c2y, s), 1.2 + 2 * c, 0, TAU); kx.fill();
+    }
+    kx.strokeStyle = hc(-20, .75, .7);
+    kx.beginPath(); kx.arc(bx2, by, 2.5 + c * 2, 0, TAU); kx.stroke();
+  });
+}
+
+// ================= audio: interaction notes + hidden sound log =================
+// Pitch comes from where you press (x = scale degree, y = octave), length from how long you
+// hold; the drag distance opens the filter and adds vibrato, and answers with a second note.
+const SCALE = [0, 3, 5, 7, 10];                       // minor pentatonic
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const LOG_KEY = 'noctiluca.soundlog.v1', LOG_MAX = 1000, LOG_SAVE = 500;
+
+let AC = null, master = null, muted = false;
+let voice = null, pressT = 0, pressX = 0, pressY = 0, dragMax = 0;
+let lastPulseCycle = 0;
+
+// ---- hidden log (never drawn; read it from the console) ----
+let soundLog = [];
+try { soundLog = JSON.parse(localStorage.getItem(LOG_KEY) || '[]') || []; } catch (e) { soundLog = []; }
+let logDirty = false;
+function logSound(e) {
+  e.ts = Date.now();
+  e.iso = new Date(e.ts).toISOString();
+  soundLog.push(e);
+  if (soundLog.length > LOG_MAX) soundLog.splice(0, soundLog.length - LOG_MAX);
+  logDirty = true;
+  sendQueue.push(e);
+}
+setInterval(() => {
+  if (!logDirty) return;
+  logDirty = false;
+  try { localStorage.setItem(LOG_KEY, JSON.stringify(soundLog.slice(-LOG_SAVE))); } catch (e) { /* storage full or blocked */ }
+}, 2000);
+window.noctilucaSounds = {
+  all: () => soundLog.slice(),
+  last: (n = 10) => soundLog.slice(-n),
+  count: () => soundLog.length,
+  tally: () => soundLog.reduce((m, e) => (m[e.note] = (m[e.note] || 0) + 1, m), {}),
+  sources: () => soundLog.reduce((m, e) => (m[e.src] = (m[e.src] || 0) + 1, m), {}),
+  json: () => JSON.stringify(soundLog, null, 2),
+  csv: () => 'iso,src,note,midi,freq,dur,vel,x,y\n' + soundLog.map(e =>
+    [e.iso, e.src, e.note, e.midi, e.freq, e.dur, e.vel, e.x, e.y].join(',')).join('\n'),
+  clear: () => { soundLog.length = 0; logDirty = false; try { localStorage.removeItem(LOG_KEY); } catch (e) {} return 'cleared'; },
+};
+
+// ---- server sync: the local API keeps every sound, and other pages can pull the same data ----
+const API_BASE = (typeof window.NOCTILUCA_API === 'string') ? window.NOCTILUCA_API
+  : (location.protocol === 'file:' ? 'http://localhost:8765/d' : new URL('.', location.href).href.replace(/\/$/, ''));
+const QUEUE_KEY = 'noctiluca.soundqueue.v1';
+const SESSION_ID = (() => {
+  try {
+    let s = sessionStorage.getItem('noctiluca.session');
+    if (!s) {
+      s = (crypto && crypto.randomUUID) ? crypto.randomUUID()
+        : 'S' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+      sessionStorage.setItem('noctiluca.session', s);
+    }
+    return s;
+  } catch (e) { return 'S' + Date.now().toString(36); }
+})();
+let sendQueue = [];
+try { sendQueue = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]') || []; } catch (e) { sendQueue = []; }
+let sending = false, sentCount = 0, lastSync = 0, syncFails = 0;
+
+async function flushSounds() {
+  if (sending || !sendQueue.length || !API_BASE) return { sent: 0, pending: sendQueue.length };
+  sending = true;
+  const batch = sendQueue.slice(0, 200);
+  let sent = 0;
+  try {
+    const res = await fetch(API_BASE + '/api/sounds', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ session: SESSION_ID, entries: batch }),
+    });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    sendQueue = sendQueue.slice(batch.length);
+    sent = batch.length; sentCount += sent; lastSync = Date.now(); syncFails = 0;
+    try { localStorage.setItem(QUEUE_KEY, JSON.stringify(sendQueue)); } catch (e) { /* storage blocked */ }
+  } catch (e) { syncFails++; }              // offline: keep the queue and retry later
+  sending = false;
+  return { sent, pending: sendQueue.length };
+}
+setInterval(() => {
+  if (!sendQueue.length) return;
+  if (syncFails > 3 && Date.now() - lastSync < Math.min(60000, 3000 * syncFails)) return;   // back off
+  flushSounds();
+}, 3000);
+window.addEventListener('beforeunload', () => {
+  if (!sendQueue.length) return;
+  try { localStorage.setItem(QUEUE_KEY, JSON.stringify(sendQueue)); } catch (e) { /* ignore */ }
+  try {
+    if (navigator.sendBeacon) navigator.sendBeacon(API_BASE + '/api/sounds',
+      new Blob([JSON.stringify({ session: SESSION_ID, entries: sendQueue })], { type: 'application/json' }));
+  } catch (e) { /* ignore */ }
+});
+Object.assign(window.noctilucaSounds, {
+  server: {
+    url: () => API_BASE,
+    session: () => SESSION_ID,
+    pending: () => sendQueue.length,
+    sent: () => sentCount,
+    lastSync: () => lastSync ? new Date(lastSync).toISOString() : null,
+    fails: () => syncFails,
+    flush: () => flushSounds(),
+    fetchAll: q => fetch(API_BASE + '/api/sounds' + (q || '')).then(r => r.json()),
+    stats: q => fetch(API_BASE + '/api/stats' + (q || '')).then(r => r.json()),
+    archives: () => fetch(API_BASE + '/api/archives').then(r => r.json()),
+    archive: (name, move) => fetch(API_BASE + '/api/archive', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name, move: !!move }),
+    }).then(r => r.json()),
+  },
+});
+
+function ensureAudio() {
+  if (AC) return AC;
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return null;
+  AC = new Ctx();
+  master = AC.createGain(); master.gain.value = .45;
+  const comp = AC.createDynamicsCompressor();
+  const delay = AC.createDelay(1.5); delay.delayTime.value = .36;
+  const fb = AC.createGain(); fb.gain.value = .34;
+  const wet = AC.createGain(); wet.gain.value = .3;
+  const lp = AC.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 2000;
+  master.connect(comp);
+  master.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(lp); lp.connect(wet); wet.connect(comp);
+  comp.connect(AC.destination);
+  return AC;
+}
+function noteName(midi) { return NOTE_NAMES[((midi % 12) + 12) % 12] + (Math.floor(midi / 12) - 1); }
+// x, y are 0..1 inside a pane
+function pitchAt(x, y) {
+  const steps = SCALE.length * 3;
+  const deg = Math.round(clamp(x, 0, 1) * (steps - 1));
+  const semi = SCALE[deg % SCALE.length] + Math.floor(deg / SCALE.length) * 12;
+  const oct = y < .34 ? 12 : y > .68 ? -12 : 0;
+  const midi = 45 + semi + oct;
+  return { midi, freq: 440 * Math.pow(2, (midi - 69) / 12), note: noteName(midi) };
+}
+
+function startVoice(freq, vel) {
+  const ac = ensureAudio();
+  if (!ac || muted) return null;
+  if (ac.state === 'suspended') ac.resume();
+  const t0 = ac.currentTime;
+  const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+  o1.type = 'sine'; o2.type = 'triangle'; o2.detune.value = 6;
+  o1.frequency.setValueAtTime(freq, t0); o2.frequency.setValueAtTime(freq * 2.003, t0);
+  const filt = ac.createBiquadFilter(); filt.type = 'lowpass';
+  filt.frequency.setValueAtTime(Math.min(7000, freq * 4), t0); filt.Q.value = 2.5;
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0, t0); g.gain.linearRampToValueAtTime(vel, t0 + .04);
+  const lfo = ac.createOscillator(), lfoG = ac.createGain();
+  lfo.frequency.value = 5.4; lfoG.gain.setValueAtTime(0, t0);
+  lfo.connect(lfoG); lfoG.connect(o1.frequency); lfoG.connect(o2.frequency);
+  o1.connect(filt); o2.connect(filt); filt.connect(g); g.connect(master);
+  o1.start(t0); o2.start(t0); lfo.start(t0);
+  return { o1, o2, g, filt, lfo, lfoG, t0, freq };
+}
+function glideVoice(v, freq) {
+  if (!v || !AC) return;
+  const now = AC.currentTime;
+  v.o1.frequency.setTargetAtTime(freq, now, .05);
+  v.o2.frequency.setTargetAtTime(freq * 2.003, now, .05);
+  v.freq = freq;
+}
+function releaseVoice(v, rel) {
+  if (!v || !AC) return;
+  const now = AC.currentTime;
+  v.g.gain.cancelScheduledValues(now);
+  v.g.gain.setValueAtTime(v.g.gain.value, now);
+  v.g.gain.setTargetAtTime(0, now, rel / 4);
+  const end = now + rel + .1;
+  v.o1.stop(end); v.o2.stop(end); v.lfo.stop(end);
+}
+
+function audioPress(x, y) {
+  const p = pitchAt(x, y);
+  pressT = performance.now(); pressX = x; pressY = y; dragMax = 0;
+  if (voice) releaseVoice(voice, .25);
+  voice = startVoice(p.freq, .22);
+  voice && (voice.pitch = p);
+}
+function audioMove(x, y) {
+  if (!voice || !AC) return;
+  const p = pitchAt(x, y);
+  glideVoice(voice, p.freq);
+  voice.pitch = p;
+  const d = Math.hypot((x - pressX) * W, (y - pressY) * H);
+  if (d > dragMax) dragMax = d;
+  const norm = clamp(dragMax / (Math.min(W, H) * .6), 0, 1);
+  const now = AC.currentTime;
+  voice.filt.frequency.setTargetAtTime(Math.min(9000, p.freq * (4 + 10 * norm)), now, .1);
+  voice.lfoG.gain.setTargetAtTime(norm * 9, now, .15);
+}
+function audioRelease() {
+  if (!voice) return;
+  const dur = (performance.now() - pressT) / 1000;
+  const p = voice.pitch || pitchAt(pressX, pressY);
+  releaseVoice(voice, clamp(.3 + dur * .5, .3, 1.6));
+  logSound({ src: 'press', note: p.note, midi: p.midi, freq: +p.freq.toFixed(2),
+    dur: +dur.toFixed(3), vel: .22, x: +pressX.toFixed(3), y: +pressY.toFixed(3), drag: Math.round(dragMax) });
+  // longer drags answer with a longer note a fifth above
+  if (dragMax > 40) {
+    const norm = clamp(dragMax / (Math.min(W, H) * .6), 0, 1);
+    audioPluck(pressX, pressY, .25 + norm * 1.1, 'drag-tail', 7, .14);
+  }
+  voice = null;
+}
+function audioPluck(x, y, dur, src, semiOffset, vel) {
+  const base = pitchAt(x, y);
+  const midi = base.midi + (semiOffset || 0);
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  const v = startVoice(freq, vel || .18);
+  if (v) setTimeout(() => releaseVoice(v, Math.min(1.4, dur * .8)), Math.max(40, dur * 1000 * .5));
+  logSound({ src, note: noteName(midi), midi, freq: +freq.toFixed(2), dur: +dur.toFixed(3),
+    vel: vel || .18, x: +x.toFixed(3), y: +y.toFixed(3) });
+}
+// one soft low tone per bell contraction, only after audio has been unlocked by a gesture
+function audioPulse() {
+  if (!AC || muted) return;
+  const x = clamp(nodeX / W, 0, 1), y = clamp(nodeY / H, 0, 1);
+  const p = pitchAt(x, y);
+  const midi = p.midi - 24;
+  const freq = 440 * Math.pow(2, (midi - 69) / 12);
+  const v = startVoice(freq, .05);
+  if (v) setTimeout(() => releaseVoice(v, .9), 300);
+  logSound({ src: 'pulse', note: noteName(midi), midi, freq: +freq.toFixed(2), dur: 1.2, vel: .05,
+    x: +x.toFixed(3), y: +y.toFixed(3) });
+}
+window.addEventListener('keydown', e => {
+  if (e.key !== 'm' && e.key !== 'M') return;
+  muted = !muted;
+  if (master && AC) master.gain.setTargetAtTime(muted ? 0 : .45, AC.currentTime, .05);
+  logSound({ src: muted ? 'mute' : 'unmute', note: '-', midi: 0, freq: 0, dur: 0, vel: 0, x: 0, y: 0 });
+});
+
+// ================= input =================
+function pointerPos(e) {
+  const r = e.currentTarget.getBoundingClientRect();
+  pointer.x = clamp((e.clientX - r.left) / r.width, 0, 1);
+  pointer.y = clamp((e.clientY - r.top) / r.height, 0, 1);
+  pointer.move = performance.now(); pointer.inside = true;
+}
+for (const cv of [L, R]) {
+  cv.addEventListener('pointerdown', e => {
+    pointer.down = true; cv.setPointerCapture(e.pointerId); pointerPos(e);
+    poke(pointer.x * W, pointer.y * H, 1);
+    audioPress(pointer.x, pointer.y);
+  });
+  cv.addEventListener('pointermove', e => { pointerPos(e); if (pointer.down) audioMove(pointer.x, pointer.y); });
+  cv.addEventListener('pointerleave', () => { if (!pointer.down) pointer.inside = false; });
+  const up = () => { audioRelease(); pointer.down = false; pointer.hold = performance.now(); pointer.holdX = pointer.x; pointer.holdY = pointer.y; };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+}
+
+// ================= MediaPipe Hands =================
+const statusEl = $('status'), statusText = $('statusText'), camBtn = $('camBtn');
+const video = $('video'), handCv = $('handCv'), hctx = handCv.getContext('2d');
+let camRunning = false, camStarting = false;
+function setStatus(txt, on) { statusText.innerHTML = `<i class="dot"></i>${txt}`; statusEl.classList.toggle('on', !!on); }
+const HAND_EDGES = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+function onResults(res) {
+  hctx.clearRect(0, 0, 320, 240);
+  const lms = res.multiHandLandmarks;
+  if (!lms || !lms.length) return;
+  const lm = lms[0], tip = lm[8];
+  hand.x = clamp(((1 - tip.x) - .12) / .76, 0, 1);
+  hand.y = clamp((tip.y - .08) / .72, 0, 1);
+  hand.pinch = Math.hypot(lm[4].x - lm[8].x, lm[4].y - lm[8].y);
+  hand.last = performance.now();
+  const pinched = hand.pinch < .05;
+  if (pinched && !hand.pinched) { poke(hand.x * W, hand.y * H, 1.2); audioPluck(hand.x, hand.y, .55, "pinch"); }
+  hand.pinched = pinched;
+  hctx.strokeStyle = hc(20, .6); hctx.lineWidth = 1.5; hctx.beginPath();
+  for (const [a, b] of HAND_EDGES) { hctx.moveTo(lm[a].x * 320, lm[a].y * 240); hctx.lineTo(lm[b].x * 320, lm[b].y * 240); }
+  hctx.stroke();
+  hctx.fillStyle = hc(-20, .65);
+  for (const p of lm) hctx.fillRect(p.x * 320 - 1.5, p.y * 240 - 1.5, 3, 3);
+  hctx.strokeStyle = hc(-40, .85); hctx.beginPath(); hctx.arc(tip.x * 320, tip.y * 240, 7, 0, TAU); hctx.stroke();
+}
+async function startHands() {
+  if (camRunning || camStarting) return;
+  if (!window.Hands || !window.Camera) { setStatus('MEDIAPIPE UNAVAILABLE · MOUSE / TOUCH'); return; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { setStatus('CAMERA API BLOCKED · MOUSE / TOUCH'); camBtn.hidden = false; return; }
+  camStarting = true; camBtn.hidden = true;
+  setStatus('REQUESTING CAMERA…');
+  try {
+    const hands = new Hands({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/hands@0.4.1675469240/${f}` });
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 0, minDetectionConfidence: .6, minTrackingConfidence: .5 });
+    hands.onResults(onResults);
+    let busy = false;
+    const cam = new Camera(video, {
+      onFrame: async () => {
+        if (busy) return; busy = true;
+        try { await hands.send({ image: video }); } catch (e) { /* model loading */ }
+        busy = false;
+      }, width: 640, height: 480
+    });
+    await cam.start();
+    camRunning = true; $('cam').hidden = false;
+    setStatus('HAND TRACKING ACTIVE', true);
+  } catch (err) {
+    console.warn('Camera unavailable:', err);
+    setStatus('CAMERA DENIED · MOUSE / TOUCH');
+    camBtn.hidden = false;
+  }
+  camStarting = false;
+}
+camBtn.addEventListener('click', startHands);
+
+// ================= simulation step =================
+function updateInteractor(dt, now) {
+  const handOn = now - hand.last < 450;
+  const ptrOn = pointer.down || (pointer.inside && now - pointer.move < 1500);
+  const was = inter.active;
+  if (handOn) { inter.x = hand.x * W; inter.y = hand.y * H; inter.active = true; }
+  else if (ptrOn) { inter.x = pointer.x * W; inter.y = pointer.y * H; inter.active = true; }
+  else inter.active = false;
+  if (inter.active) {
+    if (!was) { inter.px = inter.x; inter.py = inter.y; }
+    const sp = Math.hypot(inter.x - inter.px, inter.y - inter.py) / dt;
+    inter.speed += (Math.min(sp, S * 20) - inter.speed) * .3;
+    inter.px = inter.x; inter.py = inter.y;
+  } else inter.speed *= .9;
+}
+
+function updateBody(dt, now) {
+  let tx, ty, ky, follow = false;
+  if (now - hand.last < 450) { tx = hand.x; ty = hand.y; ky = 3.2; follow = true; inputMode = 'HAND'; }
+  else if (pointer.down) { tx = pointer.x; ty = pointer.y; ky = 3.2; follow = true; inputMode = 'DRAG'; }
+  else if (now - pointer.hold < 3000) { tx = pointer.holdX; ty = pointer.holdY; ky = 1.6; follow = true; inputMode = 'RELEASE'; }
+  else {
+    tx = .5 + .05 * Math.sin(t * .11); ty = .42 + .1 * Math.sin(t * .16) + .04 * Math.sin(t * .43); ky = .9;
+    inputMode = inter.active ? 'HOVER' : 'AUTO';
+  }
+  // X restrained to a narrow band; Y follows the probe so the cap sits right under it
+  const TX = (.5 + (tx - .5) * .14) * W;
+  const TY = clamp(ty * H + (follow ? S * .75 : 0), H * .2, H * .64);
+  const thrust = Math.max(0, dcdt) * S * 1.5;
+  let ax = 1.2 * (TX - body.x) + thrust * sinA - 2.6 * body.vx;
+  let ay = ky * (TY - body.y) - thrust * cosA - 1.7 * body.vy + S * .22;
+  if (inter.active) {
+    const dx = body.x - inter.x, dy = body.y - inter.y, d = Math.hypot(dx, dy) || 1, Rb = S * 1.25;
+    if (d < Rb) { const f = (1 - d / Rb) ** 2 * S * (follow ? 1 : 2.5); ax += dx / d * f * .3; ay += dy / d * f; }
+  }
+  body.vx += ax * dt; body.vy += ay * dt;
+  body.x = clamp(body.x + body.vx * dt, W * .32, W * .68);
+  body.y = clamp(body.y + body.vy * dt, H * .14, H * .7);
+  const tilt = clamp(body.vx / (S * 1.6), -.3, .3) + Math.sin(t * .47) * .05;
+  jelly.angle += (tilt - jelly.angle) * ease(.05, dt);
+}
+
+let last = performance.now(), frameN = 0;
+function frame(now) {
+  const dt = Math.min(.05, Math.max(.001, (now - last) / 1000)); last = now;
+  t += dt; frameN++;
+  fps += (1 / dt - fps) * .05;
+  updatePalette(t);
+  if (frameN % 10 === 0) {
+    const rs = document.documentElement.style;
+    rs.setProperty('--g', hc(-15, .62)); rs.setProperty('--c', hc(25, .6)); rs.setProperty('--dim', hc(0, .5, .35));
+  }
+  if (camRunning) statusText.lastChild.textContent = now - hand.last < 450 ? 'HAND TRACKING · LOCKED' : `HAND TRACKING · SEARCHING (${inputMode})`;
+  else if (!camStarting && frameN % 30 === 0 && statusText.lastChild.textContent === 'INITIALISING') setStatus('MOUSE / TOUCH');
+
+  pulseBoost *= Math.exp(-dt * .8);
+  jelly.phase += dt * TAU * (.42 + .5 * pulseBoost);
+  cPrev = c; c = pulseAt(jelly.phase); dcdt = (c - cPrev) / dt;
+  const cyc = Math.floor(jelly.phase / TAU);
+  if (cyc !== lastPulseCycle) { lastPulseCycle = cyc; audioPulse(); }
+
+  updateInteractor(dt, now);
+  updateBody(dt, now);
+  computeBell();
+  updateCapSprings(dt);
+  updateTentacles(dt);
+
+  trail[trailHead * 2] = nodeX; trail[trailHead * 2 + 1] = nodeY;
+  trailHead = (trailHead + 1) % TRAIL; trailCount = Math.min(TRAIL, trailCount + 1);
+  pulseHist[pulseHead] = c; pulseHead = (pulseHead + 1) % PULSE_N;
+
+  renderLeft(dt);
+  renderRight(dt);
+  renderLinks();
+  requestAnimationFrame(frame);
+}
+
+window.addEventListener('resize', resize);
+resize();
+setStatus('MOUSE / TOUCH');
+requestAnimationFrame(frame);
+startHands();
+})();
+</script>
+<script src="../shared/back.js" data-color="#3dff5f"></script>
+</body>
+</html>
