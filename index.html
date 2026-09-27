@@ -35,13 +35,30 @@
   }
   .app{ position:fixed; inset:0; }
 
-  /* The ground behind the fan: the finished "end" composition (glass,
-     stars, bubbles, pixels) at the 16:9 the artwork was drawn in, cropped
-     to cover any other window shape. */
+  /* The ground behind the fan: the "end" composition taken apart into its
+     layers so each can move on its own — the cracked glass plate, then the
+     stars, the bubbles and the pixels on top, all drawn on the same 16:9
+     sheet. Every layer is the same box with the same `cover` fit, so at
+     rest they line up exactly as in end.png; the box is a little larger
+     than the window so drifting never shows an edge. */
   .backdrop{
     position:fixed; inset:0; z-index:0;
-    background: var(--bg) url('main-assets/background.jpg') center / cover no-repeat;
+    background: var(--bg);
+    overflow:hidden;
     pointer-events:none;
+  }
+  .backdrop .layer{
+    position:absolute; inset:-5%;
+    background-position:center; background-size:cover; background-repeat:no-repeat;
+    will-change:transform, opacity;
+    opacity:0;                 /* the intro brings each one in */
+  }
+  .layer--plate { background-image:url('main-assets/plate.jpg'); }
+  .layer--star  { background-image:url('main-assets/star.png'); }
+  .layer--bubble{ background-image:url('main-assets/bubble.png'); }
+  .layer--pixel { background-image:url('main-assets/pixel.png'); }
+  @media (prefers-reduced-motion: reduce){
+    .backdrop .layer{ opacity:1; }
   }
 
   /* ---------- Left brand panel ---------- */
@@ -277,7 +294,12 @@
 
 <div class="app">
 
-  <div class="backdrop" aria-hidden="true"></div>
+  <div class="backdrop" aria-hidden="true">
+    <div class="layer layer--plate"></div>
+    <div class="layer layer--star"></div>
+    <div class="layer layer--bubble"></div>
+    <div class="layer layer--pixel"></div>
+  </div>
 
   <div class="panel-left">
     <h1 style="margin:0"><img class="logo" src="main-assets/logo.png" alt="OUTER CHORD — 성간 미아를 위한 불협화음"></h1>
@@ -674,6 +696,117 @@
     }
     if (!activated) renderStack();
   });
+
+  /* ---------------- Backdrop ----------------
+     The layers of the "end" sheet, each moving in its own way:
+       glass   — a very slow push in and out
+       stars   — drifting, with a faint twinkle
+       bubbles — breathing like a cell, and boiling: a hair of jitter on
+                 every frame, the way a hand-drawn line never sits still
+       pixels  — mostly still, then every few seconds a glitch that jumps
+                 them a whole cell or blinks them out
+     plus a little parallax against the pointer, deeper layers moving less.
+     It runs on its own slower beat (~12 frames a second, each held for a
+     slightly different time) so it reads as stop-motion against the
+     cards, and it rests while a card is open or the tab is hidden. */
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const layer = name => document.querySelector('.layer--' + name);
+  const L = { plate: layer('plate'), star: layer('star'), bubble: layer('bubble'), pixel: layer('pixel') };
+  const logoEl = document.querySelector('.panel-left .logo');
+
+  // what the intro drives; the loop below reads it on every beat
+  const intro = { plate: 0, plateScale: 1.07, star: 0, bubble: 0, pixel: 0 };
+  if (!reduceMotion) {
+    gsap.timeline()
+      .to(intro, { plate: 1, plateScale: 1, duration: 1.0, ease: 'steps(8)' }, 0)
+      .to(intro, { star: 1, duration: 1.2, ease: 'steps(10)' }, .3)
+      .to(intro, { bubble: 1, duration: 1.3, ease: 'steps(12)' }, .55)
+      .to(intro, { pixel: 1, duration: .45, ease: 'steps(4)' }, 1.35);
+  }
+
+  const BG_FPS = 12;
+  const jit = a => (Math.random() * 2 - 1) * a;
+  const wave = (time, period) => Math.sin(time * 2 * Math.PI / period);
+  const par = { x: 0, y: 0, tx: 0, ty: 0 };
+  const pixelGlitch = { until: 0, next: 2.8, dx: 0, dy: 0, hide: false };
+  const logoGlitch = { until: 0, next: 5 };
+  let bgBeat = 0;
+
+  window.addEventListener('pointermove', e => {
+    par.tx = e.clientX / window.innerWidth * 2 - 1;
+    par.ty = e.clientY / window.innerHeight * 2 - 1;
+  }, { passive: true });
+
+  // one pixel square of the artwork, in screen px: the squares are 23px
+  // on the 2000px-wide sheet, and the sheet is fitted with `cover`
+  function pixelCell(){
+    const w = L.pixel.offsetWidth, h = L.pixel.offsetHeight;
+    return Math.max(w, h * 16 / 9) * 23 / 2000;
+  }
+
+  function drawBackdrop(time){
+    const vw = window.innerWidth / 100;
+    par.x += (par.tx - par.x) * .3;
+    par.y += (par.ty - par.y) * .3;
+
+    gsap.set(L.plate, {
+      x: -par.x * .35 * vw, y: -par.y * .35 * vw,
+      scale: intro.plateScale * (1 + .012 * wave(time, 22)),
+      opacity: intro.plate,
+    });
+
+    gsap.set(L.star, {
+      x: -par.x * .8 * vw + wave(time, 41) * .9 * vw,
+      y: -par.y * .8 * vw + wave(time + 9, 57) * .5 * vw,
+      opacity: intro.star * (.86 + Math.random() * .14),
+    });
+
+    // the bubbles open out of the middle during the intro
+    const b = intro.bubble;
+    gsap.set(L.bubble, {
+      x: -par.x * 1.4 * vw + jit(1.3), y: -par.y * 1.4 * vw + jit(1.3),
+      scale: 1 + .02 * wave(time, 7),
+      rotation: .6 * wave(time, 19),
+      opacity: b > 0 ? 1 : 0,
+      clipPath: b < 1 ? `circle(${(b * 75).toFixed(1)}% at 50% 50%)` : 'none',
+    });
+
+    if (time > pixelGlitch.next) {
+      const c = pixelCell();
+      pixelGlitch.until = time + .12 + Math.random() * .28;
+      pixelGlitch.next = time + 2 + Math.random() * 3.8;
+      pixelGlitch.dx = c * Math.round(jit(2.4));
+      pixelGlitch.dy = c * Math.round(jit(1.4));
+      pixelGlitch.hide = Math.random() < .3;
+    }
+    const glitching = time < pixelGlitch.until;
+    gsap.set(L.pixel, {
+      x: -par.x * 2.1 * vw + (glitching ? pixelGlitch.dx : 0),
+      y: -par.y * 2.1 * vw + (glitching ? pixelGlitch.dy : 0),
+      opacity: intro.pixel * (glitching && pixelGlitch.hide ? 0 : 1),
+    });
+
+    // the wordmark stutters now and then
+    if (time > logoGlitch.next) {
+      logoGlitch.until = time + .1 + Math.random() * .14;
+      logoGlitch.next = time + 4 + Math.random() * 6;
+    }
+    const stutter = time < logoGlitch.until;
+    gsap.set(logoEl, {
+      x: stutter ? jit(7) : 0,
+      skewX: stutter ? jit(10) : 0,
+      opacity: stutter && Math.random() < .4 ? .4 : 1,
+    });
+  }
+
+  if (!reduceMotion) {
+    gsap.ticker.add(time => {
+      if (time < bgBeat) return;
+      bgBeat = time + (1 / BG_FPS) * (1 + jit(.2));
+      if (activated || document.hidden) return;
+      drawBackdrop(time);
+    });
+  }
 
   /* ---------------- Pointer helpers ----------------
      The fan runs left to right, so it is dragged left to right too — a
