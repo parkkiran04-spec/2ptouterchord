@@ -40,7 +40,9 @@
      stars, the bubbles and the pixels on top, all drawn on the same 16:9
      sheet. Every layer is the same box with the same `cover` fit, so at
      rest they line up exactly as in end.png; the box is a little larger
-     than the window so drifting never shows an edge. */
+     than the window so drifting never shows an edge. That overscan is the
+     whole budget the parallax has to spend — twelve percent a side, which
+     is what lets the drift be as large as it is. */
   .backdrop{
     position:fixed; inset:0; z-index:0;
     background: var(--bg);
@@ -48,7 +50,7 @@
     pointer-events:none;
   }
   .backdrop .layer{
-    position:absolute; inset:-5%;
+    position:absolute; inset:-12%;
     background-position:center; background-size:cover; background-repeat:no-repeat;
     will-change:transform, opacity;
     opacity:0;                 /* the intro brings each one in */
@@ -235,6 +237,34 @@
     aspect-ratio: 1 / 1;
     will-change: transform, opacity;
   }
+  /* The line that draws itself round a hovered card. It sits outside
+     .card-inner so the clipped artwork cannot cut it off, and takes no
+     pointer events so it never steals the hover it is reacting to. */
+  .card__outline{
+    position:absolute;
+    inset:-7%;
+    overflow:visible;
+    pointer-events:none;
+    opacity:0;
+  }
+  .card__outline path{
+    fill:none;
+    stroke: var(--red);
+    /* In viewBox units, not pixels. non-scaling-stroke would hold the
+       weight steady at any card size, but it also makes the browser read
+       stroke-dasharray in screen pixels while getTotalLength() stays in
+       viewBox units — the two disagree by the viewBox scale (~2.9x here),
+       so a single dash meant to wrap the card once repeats three times and
+       the line comes out dotted. Sizing the stroke in the same units as
+       the dash keeps them in step; the card barely changes size anyway, so
+       the weight lands a touch either side of a pixel across the fan —
+       fine enough to read as drawn rather than printed, and not so fine
+       that it drops out where it crosses a neighbouring card. */
+    stroke-width:0.38;
+    stroke-linecap:round;
+    stroke-linejoin:round;
+  }
+
   .card-inner{
     position:absolute; inset:0;
     border-radius:4px;
@@ -384,8 +414,8 @@
 
   const HOLD_JITTER = 0.15;          // ±15% on each frame's hold
 
-  const jitteredHold = fps =>
-    (1000 / fps) * (1 + (Math.random() * 2 - 1) * HOLD_JITTER);
+  const jitteredHold = (fps, jitter = HOLD_JITTER) =>
+    (1000 / fps) * (1 + (Math.random() * 2 - 1) * jitter);
 
   /* A frame can only ever be released on a repaint, so any requested hold
      gets rounded up to the next one — ask for 31ms on a 60Hz screen and you
@@ -424,6 +454,46 @@
     { id:5, title:"Tenshi no Tsubasa", desc:"천사의 날개",       url:"tenshi/index.html", bg:"url('tenshi/thumb.webp') center/cover no-repeat, #111",
       panel:"#0000ff", ink:"#f0f0f0", body:["외계인들이 손에 쥔 무기는 보통 예술이다","외롭거나 괴로운 자들의 영역…","이것만은 영원히 당신의 편"] },
   ];
+
+  /* ---------------- Sketched outline ----------------
+     A rounded rectangle walked point by point, with every point nudged off
+     the true path, then smoothed through the midpoints. Drawing it as one
+     continuous curve rather than a CSS border is what lets it be dashed on
+     from a single end — and what stops it looking machine-ruled. */
+  function sketchedOutline(inset = 5){
+    const a = inset, b = 100 - inset, r = 9, jit = 1.7;
+    const perEdge = 6, perCorner = 4;
+    const pts = [];
+    const add = (x, y) => pts.push([
+      x + (Math.random() - 0.5) * jit,
+      y + (Math.random() - 0.5) * jit
+    ]);
+    const corner = (cx, cy, from) => {
+      for (let i = 0; i <= perCorner; i++){
+        const t = from + (Math.PI / 2) * (i / perCorner);
+        add(cx + Math.cos(t) * r, cy + Math.sin(t) * r);
+      }
+    };
+    const span = b - a - 2 * r;
+    for (let i = 0; i < perEdge; i++) add(a + r + span * (i / perEdge), a);
+    corner(b - r, a + r, -Math.PI / 2);
+    for (let i = 0; i < perEdge; i++) add(b, a + r + span * (i / perEdge));
+    corner(b - r, b - r, 0);
+    for (let i = 0; i < perEdge; i++) add(b - r - span * (i / perEdge), b);
+    corner(a + r, b - r, Math.PI / 2);
+    for (let i = 0; i < perEdge; i++) add(a, b - r - span * (i / perEdge));
+    corner(a + r, a + r, Math.PI);
+
+    const mid = (p, q) => [(p[0] + q[0]) / 2, (p[1] + q[1]) / 2];
+    const n = pts.length;
+    const start = mid(pts[n - 1], pts[0]);
+    let d = `M${start[0].toFixed(2)} ${start[1].toFixed(2)}`;
+    for (let i = 0; i < n; i++){
+      const cur = pts[i], m = mid(cur, pts[(i + 1) % n]);
+      d += `Q${cur[0].toFixed(2)} ${cur[1].toFixed(2)} ${m[0].toFixed(2)} ${m[1].toFixed(2)}`;
+    }
+    return d + 'Z';
+  }
 
   /* ---------------- DOM setup ---------------- */
   const stackEl = document.getElementById('stack');
@@ -580,6 +650,28 @@
     inner.innerHTML = `<div class="card__thumb" style="background:${p.bg}"></div>`;
     inner.setAttribute('aria-label', p.title);
     card.appendChild(inner);
+
+    /* Two sketched rings, drawn fresh per card so no two cards carry the
+       same stroke. Each is dashed into a few long arcs that travel round
+       the card while it is hovered — two laps at different speeds and in
+       opposite directions, so the gaps in one are covered by the other and
+       the card is wrapped almost the whole time. */
+    const outline = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    outline.setAttribute('class', 'card__outline');
+    outline.setAttribute('viewBox', '0 0 100 100');
+    /* The box is 7% larger than the card on every side, so in viewBox units
+       the card's own edge sits at 6.14. Both rings sit well clear of it —
+       the inner one wanders no further out than 5.05 once its jitter is
+       counted — and only 1.2 apart, so they read as one doubled stroke
+       rather than as a ring inside a ring. */
+    [3, 4.2].forEach(inset => {
+      const ring = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      ring.setAttribute('d', sketchedOutline(inset));
+      outline.appendChild(ring);
+    });
+    card.appendChild(outline);
+
+
     stackEl.appendChild(card);
     bindCardOpen(card);
 
@@ -587,7 +679,9 @@
     // in-plane 45deg spin so the tilt is applied AFTER the diamond rotation (nested
     // transforms), producing a symmetric flattened diamond instead of a skewed kite.
     // the fan is flat: cards face the viewer and only turn in the plane
-    gsap.set(card, { xPercent:-50, yPercent:-50 });
+    // the fan is flat, but each card carries its own perspective so it can
+    // lean toward the cursor without the whole arc sharing a vanishing point
+    gsap.set(card, { xPercent:-50, yPercent:-50, transformPerspective: 900 });
     return card;
   });
 
@@ -697,6 +791,122 @@
     if (!activated) renderStack();
   });
 
+  /* ---------------- Hover: lean and line ----------------
+     The card leans toward the cursor on its own perspective, and the
+     sketched line draws itself round the edge. The lean uses rotationX/Y
+     and z, none of which the arc layout writes, so the two can run over
+     each other without fighting for the same transform. */
+  const TILT_MAX = 14;      // degrees at the far corner of a card
+  const TILT_LIFT = 46;     // how far it comes forward, in px
+
+  /* Each ring is a single unbroken stroke, not a dashed one: one long arc
+     that wraps almost the whole way round with one travelling gap where
+     its two ends fail to meet. `covered` is how much of the lap the stroke
+     takes up, `lap` how long one turn takes — negative runs it backwards. */
+  const RING_SPEC = [
+    { covered: 0.90, lap: 1.4 },   // outer
+    { covered: 0.86, lap: 1.9 }    // inner, a touch slower so the two
+  ];                               // gaps drift apart instead of locking
+
+  /* The rings travel on their own clock, slower and coarser than the
+     cards': eight frames a second, each held a good deal longer or
+     shorter than the last. A tween would ride the card ticker and glide,
+     so the offset is driven by hand — nothing is written between beats,
+     and that gap is the hold.
+
+     Fewer frames to a lap means a bigger jump in each one, and the wobble
+     is wide enough here that the jumps come out plainly uneven — which is
+     the difference between a cheap frame rate and a camera being tapped by
+     hand.
+
+     Eight is also about the floor for this lap: at a brisk 1.4s a turn
+     the gap already moves a ninth of the way round between frames, and
+     much past that it stops reading as travelling and starts reading as
+     flickering in place. */
+  const LINE_FPS = 8;
+  const LINE_JITTER = 0.3;           // ±30%, twice the cards' wobble
+  const liveRings = new Set();
+  let lineClock = 0, lineNextBeat = 0;
+
+  gsap.ticker.add((time, deltaTime) => {
+    if (!liveRings.size) return;
+    lineClock += Math.min(deltaTime, 200) / 1000;
+    if (lineClock < lineNextBeat) return;          // still holding this frame
+
+    /* Booking the next beat off the previous boundary rather than off now
+       carries the overshoot forward, so the average lands on LINE_FPS
+       instead of collapsing onto the faster clock underneath. */
+    const hold = jitteredHold(LINE_FPS, LINE_JITTER) / 1000;
+    lineNextBeat += hold;
+    if (lineNextBeat < lineClock - hold) lineNextBeat = lineClock + hold;
+
+    for (const r of liveRings) {
+      gsap.set(r.path, { strokeDashoffset: -((lineClock % r.lap) / r.lap) * r.len });
+    }
+  });
+
+  cardEls.forEach(card => {
+    const svg = card.querySelector('.card__outline');
+    const rings = [...svg.querySelectorAll('path')].map((path, i) => {
+      const spec = RING_SPEC[i];
+      const len = path.getTotalLength();
+      // one dash and one gap over the whole lap, so the stroke reads as a
+      // single continuous line rather than a row of ticks
+      gsap.set(path, {
+        strokeDasharray: `${len * spec.covered} ${len * (1 - spec.covered)}`,
+        strokeDashoffset: 0
+      });
+      return { path, len, lap: spec.lap };
+    });
+
+    const canHover = () => !activated && !isDragging;
+
+    card.addEventListener('pointerenter', () => {
+      if (!canHover()) return;
+      gsap.killTweensOf(svg);
+      gsap.to(svg, { opacity: 1, duration: 0.2 });
+      /* The outline is walked clockwise when it is built, and dash offset
+         counts backwards along that walk — so the stepper, driving the
+         offset negative, sends the gap round clockwise. The rings keep
+         going for as long as the pointer stays on the card. */
+      rings.forEach(r => liveRings.add(r));
+      gsap.to(card, { z: TILT_LIFT, duration: 0.4, ease: 'power2.out' });
+    });
+
+    card.addEventListener('pointermove', e => {
+      if (!canHover()) return;
+      const r = card.getBoundingClientRect();
+      const nx = (e.clientX - (r.left + r.width / 2)) / (r.width / 2);
+      const ny = (e.clientY - (r.top + r.height / 2)) / (r.height / 2);
+      gsap.to(card, {
+        rotationY: Math.max(-1, Math.min(1, nx)) * TILT_MAX,
+        rotationX: Math.max(-1, Math.min(1, ny)) * -TILT_MAX,
+        duration: 0.5, ease: 'power2.out'
+      });
+    });
+
+    card.addEventListener('pointerleave', () => {
+      // the rings keep stepping round as they fade, rather than stopping dead
+      gsap.to(svg, { opacity: 0, duration: 0.28,
+                     onComplete: () => rings.forEach(r => liveRings.delete(r)) });
+      gsap.to(card, { rotationX: 0, rotationY: 0, z: 0,
+                      duration: 0.5, ease: 'power3.out' });
+    });
+  });
+
+  // a card being opened must not carry a leftover lean into the detail view
+  function clearHover(card){
+    const svg = card.querySelector('.card__outline');
+    // the lift and lean are tweens too: setting z back without killing them
+    // lets an in-flight lift finish and put the card straight back up
+    gsap.killTweensOf([svg, card]);
+    gsap.set(svg, { opacity: 0 });
+    gsap.set(card, { rotationX: 0, rotationY: 0, z: 0 });
+    // only one card is ever hovered, so there is nothing left to step
+    liveRings.clear();
+  }
+
+
   /* ---------------- Backdrop ----------------
      The layers of the "end" sheet, each moving in its own way:
        glass   — a very slow push in and out
@@ -728,6 +938,21 @@
   const jit = a => (Math.random() * 2 - 1) * a;
   const wave = (time, period) => Math.sin(time * 2 * Math.PI / period);
   const par = { x: 0, y: 0, tx: 0, ty: 0 };
+
+  /* Each layer is pushed the opposite way to the pointer, deeper layers
+     less, which is what sells the depth. The two axes carry their own
+     gain and their own unit: sideways in vw, up and down in vh. Measured
+     that way the drift no longer changes with the window shape. It was
+     vw on both axes once, which on a 16:9 window moved the layers as far
+     vertically as horizontally across a viewport only 56% as tall as it
+     is wide, and the vertical came out reading as half the movement.
+
+     Both are spent out of the layers overscan. Vertical is the tight
+     axis: at 3.2 the deepest layer already uses over half the room it
+     has, while sideways at 2.0 it uses barely a third. Raise either much
+     further and the inset has to go up with it, or an edge drags in. */
+  const PARALLAX_X = 2.0;   // in vw
+  const PARALLAX_Y = 3.2;   // in vh, larger because a vh is the smaller unit
   const pixelGlitch = { until: 0, next: 2.8, dx: 0, dy: 0, hide: false };
   const logoGlitch = { until: 0, next: 5 };
   let bgBeat = 0;
@@ -746,25 +971,28 @@
 
   function drawBackdrop(time){
     const vw = window.innerWidth / 100;
+    const vh = window.innerHeight / 100;
+    const px = depth => -par.x * depth * PARALLAX_X * vw;
+    const py = depth => -par.y * depth * PARALLAX_Y * vh;
     par.x += (par.tx - par.x) * .3;
     par.y += (par.ty - par.y) * .3;
 
     gsap.set(L.plate, {
-      x: -par.x * .35 * vw, y: -par.y * .35 * vw,
+      x: px(.35), y: py(.35),
       scale: intro.plateScale * (1 + .012 * wave(time, 22)),
       opacity: intro.plate,
     });
 
     gsap.set(L.star, {
-      x: -par.x * .8 * vw + wave(time, 41) * .9 * vw,
-      y: -par.y * .8 * vw + wave(time + 9, 57) * .5 * vw,
+      x: px(.8) + wave(time, 41) * .9 * vw,
+      y: py(.8) + wave(time + 9, 57) * .5 * vh,
       opacity: intro.star * (.86 + Math.random() * .14),
     });
 
     // the bubbles open out of the middle during the intro
     const b = intro.bubble;
     gsap.set(L.bubble, {
-      x: -par.x * 1.4 * vw + jit(1.3), y: -par.y * 1.4 * vw + jit(1.3),
+      x: px(1.4) + jit(1.3), y: py(1.4) + jit(1.3),
       scale: 1 + .02 * wave(time, 7),
       rotation: .6 * wave(time, 19),
       opacity: b > 0 ? 1 : 0,
@@ -781,8 +1009,8 @@
     }
     const glitching = time < pixelGlitch.until;
     gsap.set(L.pixel, {
-      x: -par.x * 2.1 * vw + (glitching ? pixelGlitch.dx : 0),
-      y: -par.y * 2.1 * vw + (glitching ? pixelGlitch.dy : 0),
+      x: px(2.1) + (glitching ? pixelGlitch.dx : 0),
+      y: py(2.1) + (glitching ? pixelGlitch.dy : 0),
       opacity: intro.pixel * (glitching && pixelGlitch.hide ? 0 : 1),
     });
 
@@ -933,6 +1161,8 @@
     const inner = card.querySelector('.card-inner');
     const project = projects[index];
     card.style.zIndex = 999;
+
+    cardEls.forEach(clearHover);
 
     const others = cardEls.filter((_, i) => i !== index);
 
