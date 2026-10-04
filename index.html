@@ -9,12 +9,13 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <style>
-  /* The display face used on the panels. Drop the file in at this path and
-     the titles pick it up; until then they fall back to Playfair Display. */
+  /* The display face used on the panels. Only the OpenType file is here;
+     there is no woff2 to list ahead of it, and naming one that is not there
+     costs every visitor a 404 before the fallback. Playfair Display stands
+     in if this fails to load. */
   @font-face{
     font-family:'Nomark';
-    src: url('./fonts/nomark.woff2') format('woff2'),
-         url('./fonts/nomark.otf')   format('opentype');
+    src: url('./fonts/nomark.otf') format('opentype');
     font-display: swap;
   }
   :root{
