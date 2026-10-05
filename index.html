@@ -738,11 +738,11 @@
      place as none at all, so it can simply stop being read. */
   const opening = {
     running: false,  // set when the timeline is built, below the backdrop
-    cxF: 0.5,        // centre of the ring, across the viewport
-    cyF: 0.5,        // and down it
-    rF: 0.02,        // ring radius, against the shorter side of the viewport;
-                     // near enough nothing to start with, so the whole deck
-                     // sits on one spot and only the lead card is seen
+    cxF: 0.5,        // centre of the ring: dead centre of the viewport, and
+    cyF: 0.5,        // it stays there — only the radius opens out
+    rF: 0,           // ring radius, against the shorter side of the viewport;
+                     // nothing at all to start with, so the whole deck sits
+                     // on the exact centre and only the lead card is seen
     step: 0,         // degrees between neighbours; 0 stacks them all up
     spin: 0,         // turns the ring, carrying the lead round with it
     scale: 0.42,     // the deck arrives small and is zoomed into at the end
@@ -1095,15 +1095,16 @@
     gsap.timeline({ onComplete: () => { opening.running = false; } })
       // one card, alone in the middle
       .fromTo(opening, { scale: 0.04 }, { scale: 0.42, duration: 0.8, ease: 'back.out(1.5)' }, 0)
-      // which drifts off to the right
-      .to(opening, { cxF: 0.60, duration: 1.0, ease: 'power2.inOut' }, 1.0)
-      // the rest surface behind it, stacked, and open out into a ring
+      // which rises. The lead card sits at the top of the circle, so
+      // growing the radius lifts it straight up off the centre; nothing
+      // has to be moved sideways to put it there
+      .to(opening, { rF: 0.30, duration: 1.1, ease: 'power2.inOut' }, 1.0)
+      // the rest surface behind it, stacked, and open out around the ring
       .to(opening, { reveal: 1, duration: 0.35 }, 1.95)
-      .to(opening, { step: 360 / n, duration: 1.2, ease: 'power2.out' }, 2.0)
-      .to(opening, { rF: 0.30, duration: 1.2, ease: 'power2.out' }, 2.0)
+      .to(opening, { step: 360 / n, duration: 1.2, ease: 'power2.out' }, 2.1)
       // which turns a full circle — ending where it started, so the spin
       // can be dropped at the end without anything moving
-      .to(opening, { spin: -360, duration: 4.2, ease: 'power1.inOut' }, 2.0)
+      .to(opening, { spin: -360, duration: 4.1, ease: 'power1.inOut' }, 2.1)
       // and finally swings out and grows into the fan
       .to(opening, { blend: 1, duration: 1.8, ease: 'power2.inOut' }, 4.6)
       .to([panelLeft, panelRight, hintEl, chordBtn],
