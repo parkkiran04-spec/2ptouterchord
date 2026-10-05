@@ -64,6 +64,48 @@
     .backdrop .layer{ opacity:1; }
   }
 
+  /* ---------- Opening wordmark ----------
+     The flat logo is one file: the compass mark, OUTERCHORD, and the
+     Korean line beneath. The opening shows the mark alone in the middle of
+     the ring and then lets the word out beside it, which is a matter of
+     clipping rather than of two images — `.openlogo__line` is the window,
+     and it widens from the mark's share of the artwork to all of it while
+     the word inside keeps its full width and slides out from under the
+     right edge.
+
+     The numbers are measured off the file, which is 1400x265: the mark
+     runs to x=228 with a clear gap before the U at x=285, so the window
+     opens at 255/1400 of the width; the wordmark band ends at y=216 and
+     the Korean line starts at y=224, which is where the two are split onto
+     their own elements. The window is centred, so the lockup is centred at
+     both ends and the mark drifts left as the word arrives. */
+  .openlogo{
+    --logo-w: clamp(240px, 26vw, 560px);
+    position:fixed; left:50%; top:50%;
+    width: var(--logo-w);
+    transform: translate(-50%, -50%);
+    display:flex; flex-direction:column; align-items:center;
+    z-index:5;                 /* above the backdrop, below the cards */
+    opacity:0;                 /* the opening brings it in */
+    pointer-events:none;
+  }
+  .openlogo__line{
+    overflow:hidden;
+    width: calc(var(--logo-w) * 255 / 1400);
+  }
+  .openlogo__word{
+    width: var(--logo-w);
+    height: calc(var(--logo-w) * 216 / 1400);
+    background: url('main-assets/logo.png') 0 0 / 100% auto no-repeat;
+  }
+  .openlogo__sub{
+    width: var(--logo-w);
+    height: calc(var(--logo-w) * 41 / 1400);
+    margin-top: calc(var(--logo-w) * 8 / 1400);
+    background: url('main-assets/logo.png') 0 calc(var(--logo-w) * -224 / 1400) / 100% auto no-repeat;
+    opacity:0;                 /* it joins once the word is all the way out */
+  }
+
   /* ---------- Left brand panel ---------- */
   .panel-left{
     position:fixed; left:56px; top:52px; z-index:30;
@@ -330,6 +372,11 @@
     <div class="layer layer--star"></div>
     <div class="layer layer--bubble"></div>
     <div class="layer layer--pixel"></div>
+  </div>
+
+  <div class="openlogo" id="openLogo" aria-hidden="true">
+    <div class="openlogo__line" id="openLogoLine"><div class="openlogo__word"></div></div>
+    <div class="openlogo__sub" id="openLogoSub"></div>
   </div>
 
   <div class="panel-left">
@@ -1090,6 +1137,9 @@
      less motion simply starts on the finished screen. */
   if (!reduceMotion) {
     opening.running = true;
+    const openLogo = document.getElementById('openLogo');
+    const openLogoLine = document.getElementById('openLogoLine');
+    const openLogoSub = document.getElementById('openLogoSub');
     gsap.set([panelLeft, panelRight, hintEl, chordBtn], { opacity: 0 });
 
     gsap.timeline({ onComplete: () => { opening.running = false; } })
@@ -1104,11 +1154,19 @@
       .to(opening, { step: 360 / n, duration: 1.2, ease: 'power2.out' }, 2.1)
       // which turns a full circle — ending where it started, so the spin
       // can be dropped at the end without anything moving
-      .to(opening, { spin: -360, duration: 4.1, ease: 'power1.inOut' }, 2.1)
+      .to(opening, { spin: -360, duration: 5.7, ease: 'power1.inOut' }, 2.1)
+
+      // the mark arrives in the middle of the ring, and the word unfolds
+      // out beside it; the Korean line joins once it is all the way out
+      .to(openLogo, { opacity: 1, duration: 0.5, ease: 'power1.out' }, 2.9)
+      .to(openLogoLine, { width: '100%', duration: 1.1, ease: 'power3.inOut' }, 3.6)
+      .to(openLogoSub, { opacity: 1, duration: 0.5, ease: 'power1.out' }, 4.7)
+      // and it clears out before the fan sweeps through the middle
+      .to(openLogo, { opacity: 0, duration: 0.7, ease: 'power1.in' }, 5.9)
       // and finally swings out and grows into the fan
-      .to(opening, { blend: 1, duration: 1.8, ease: 'power2.inOut' }, 4.6)
+      .to(opening, { blend: 1, duration: 1.8, ease: 'power2.inOut' }, 6.0)
       .to([panelLeft, panelRight, hintEl, chordBtn],
-          { opacity: 1, duration: 0.5, ease: 'power1.out' }, 5.6);
+          { opacity: 1, duration: 0.5, ease: 'power1.out' }, 7.0);
   }
 
   /* ---------------- Pointer helpers ----------------
