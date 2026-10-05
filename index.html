@@ -716,6 +716,39 @@
   const ARC_STEP_DEG = 20;     // angular gap between neighbouring cards
   const ARC_APEX = 0.47;       // where the focused card sits, down the screen
 
+
+  /* ---------------- Opening ----------------
+     A card arrives on its own, drifts off to the right, and the rest of the
+     deck unstacks from behind it into a ring that turns once before the
+     whole thing swings out into the resting fan.
+
+     None of that is a bespoke path. The fan is already a ring — cards sat
+     on a circle, each turned to stay square to it — so the entire sequence
+     is four numbers being moved: where the lead card sits on screen, how
+     wide the circle is, the gap between neighbours, and a spin offset. Run
+     them to the values the fan already uses and the opening lands on the
+     main screen exactly, with no hand-off and nothing to keep in step.
+
+     The pose is held in fractions of the viewport rather than pixels, so a
+     window resized halfway through does not strand it, and `blend` crosses
+     the whole thing over onto the resting pose, which is worked out fresh
+     every frame.
+
+     `spin` is not blended. It finishes on a whole turn, which is the same
+     place as none at all, so it can simply stop being read. */
+  const opening = {
+    running: false,  // set when the timeline is built, below the backdrop
+    cxF: 0.5,        // centre of the ring, across the viewport
+    cyF: 0.5,        // and down it
+    rF: 0.02,        // ring radius, against the shorter side of the viewport;
+                     // near enough nothing to start with, so the whole deck
+                     // sits on one spot and only the lead card is seen
+    step: 0,         // degrees between neighbours; 0 stacks them all up
+    spin: 0,         // turns the ring, carrying the lead round with it
+    scale: 0.42,     // the deck arrives small and is zoomed into at the end
+    reveal: 0,       // the cards waiting behind the lead
+    blend: 0         // 0 = the pose above, 1 = the resting fan
+  };
   function arcRadius(){
     return Math.max(window.innerHeight * 0.98, window.innerWidth * 0.62);
   }
@@ -728,22 +761,37 @@
 
   function renderStack(){
     const vw = window.innerWidth, vh = window.innerHeight;
-    const r = arcRadius();
-    const cx = vw / 2;
-    const cy = ARC_APEX * vh + r;          // circle centre, below the screen
+    const restR = arcRadius();
+
+    // the fan's own pose, worked out every frame so a resize costs nothing
+    let r = restR, cx = vw / 2, cy = ARC_APEX * vh + restR,
+        step = ARC_STEP_DEG, spin = 0, scale = 1, behind = 1;
+
+    if (opening.running) {
+      const b = opening.blend;
+      const mix = (from, to) => from + (to - from) * b;
+      const openR = opening.rF * Math.min(vw, vh);
+      r      = mix(openR, restR);
+      cx     = mix(opening.cxF * vw, vw / 2);
+      cy     = mix(opening.cyF * vh, ARC_APEX * vh + restR);
+      step   = mix(opening.step, ARC_STEP_DEG);
+      scale  = mix(opening.scale, 1);
+      spin   = opening.spin;
+      behind = Math.max(opening.reveal, b);
+    }
 
     for (let i = 0; i < n; i++){
       const rel = slotFor(i, currentDisplay);
-      const a = rel * ARC_STEP_DEG * Math.PI / 180;
+      const a = (rel * step + spin) * Math.PI / 180;
 
       gsap.set(cardEls[i], {
         // cards are laid out from the middle of the viewport, so the arc
         // position has to be expressed as an offset from there
         x: cx + Math.sin(a) * r - vw / 2,
         y: cy - Math.cos(a) * r - vh / 2,
-        rotation: rel * ARC_STEP_DEG,
-        scale: 1 - Math.abs(rel) * 0.035,
-        opacity: 1,
+        rotation: rel * step + spin,
+        scale: (1 - Math.abs(rel) * 0.035) * scale,
+        opacity: rel === 0 ? 1 : behind,
         zIndex: Math.round((n - Math.abs(rel)) * 10)
       });
     }
@@ -860,7 +908,7 @@
       return { path, len, lap: spec.lap };
     });
 
-    const canHover = () => !activated && !isDragging;
+    const canHover = () => !activated && !isDragging && !opening.running;
 
     card.addEventListener('pointerenter', () => {
       if (!canHover()) return;
@@ -1037,6 +1085,31 @@
     });
   }
 
+  /* The opening runs the pose above into the fan's own. Everything the
+     page offers is held back until it lands, and anyone who has asked for
+     less motion simply starts on the finished screen. */
+  if (!reduceMotion) {
+    opening.running = true;
+    gsap.set([panelLeft, panelRight, hintEl, chordBtn], { opacity: 0 });
+
+    gsap.timeline({ onComplete: () => { opening.running = false; } })
+      // one card, alone in the middle
+      .fromTo(opening, { scale: 0.04 }, { scale: 0.42, duration: 0.8, ease: 'back.out(1.5)' }, 0)
+      // which drifts off to the right
+      .to(opening, { cxF: 0.60, duration: 1.0, ease: 'power2.inOut' }, 1.0)
+      // the rest surface behind it, stacked, and open out into a ring
+      .to(opening, { reveal: 1, duration: 0.35 }, 1.95)
+      .to(opening, { step: 360 / n, duration: 1.2, ease: 'power2.out' }, 2.0)
+      .to(opening, { rF: 0.30, duration: 1.2, ease: 'power2.out' }, 2.0)
+      // which turns a full circle — ending where it started, so the spin
+      // can be dropped at the end without anything moving
+      .to(opening, { spin: -360, duration: 4.2, ease: 'power1.inOut' }, 2.0)
+      // and finally swings out and grows into the fan
+      .to(opening, { blend: 1, duration: 1.8, ease: 'power2.inOut' }, 4.6)
+      .to([panelLeft, panelRight, hintEl, chordBtn],
+          { opacity: 1, duration: 0.5, ease: 'power1.out' }, 5.6);
+  }
+
   /* ---------------- Pointer helpers ----------------
      The fan runs left to right, so it is dragged left to right too — a
      vertical drag would have the cards travelling at right angles to the
@@ -1050,7 +1123,7 @@
 
   /* ---------------- Drag (mouse) ---------------- */
   function onMouseDown(e){
-    if (activated) return;
+    if (activated || opening.running) return;
     isDragging = true;
     dragMoved = 0;
     dragStartX = pointX(e);
@@ -1085,7 +1158,7 @@
      the scene simply opens the card currently at the front. */
   sceneEl.addEventListener('dblclick', () => {
     clearTimeout(singleClickTimer);
-    if (activated) return;
+    if (activated || opening.running) return;
     activateCard(lastMetaIndex >= 0 ? lastMetaIndex : 0);
   });
 
@@ -1096,7 +1169,7 @@
   let singleClickTimer = null;
 
   sceneEl.addEventListener('click', () => {
-    if (activated || dragMoved >= 8) return;
+    if (activated || opening.running || dragMoved >= 8) return;
     clearTimeout(singleClickTimer);
     singleClickTimer = setTimeout(() => {
       if (!activated) targetIndex = Math.round(targetIndex) + 1;
@@ -1107,7 +1180,7 @@
   let lastTapTime = 0;
 
   function onTouchStart(e){
-    if (activated) return;
+    if (activated || opening.running) return;
     isDragging = true;
     dragMoved = 0;
     dragStartX = pointX(e);
@@ -1145,7 +1218,7 @@
   /* ---------------- Wheel ---------------- */
   let wheelTimeout = null;
   sceneEl.addEventListener('wheel', (e) => {
-    if (activated) return;
+    if (activated || opening.running) return;
     targetIndex += e.deltaY / WHEEL_SENSITIVITY;
     clearTimeout(wheelTimeout);
     wheelTimeout = setTimeout(() => {
@@ -1155,7 +1228,7 @@
 
   /* ---------------- Activation: stand up + fullscreen morph ---------------- */
   function activateCard(index){
-    if (activated) return;
+    if (activated || opening.running) return;
     activated = true;
 
     const card = cardEls[index];
