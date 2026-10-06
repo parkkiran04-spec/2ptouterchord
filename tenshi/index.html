@@ -49,6 +49,7 @@
 
 <div id="loader">TENSHI<i></i></div>
 
+<script src="../shared/perf.js"></script>
 <script>
 (() => {
 'use strict';
@@ -87,26 +88,44 @@ const LAYERS = [
 /* ───────────── canvas setup ───────────── */
 const cv = document.getElementById('stage');
 const ctx = cv.getContext('2d', { alpha:false });
-const dark = document.createElement('canvas'), dctx = dark.getContext('2d');
-const mask = document.createElement('canvas'), mctx = mask.getContext('2d');
+
+/* Quality, stepped down by shared/perf.js on devices that can't keep up
+   (TVs, kiosk tablets). Level 0 is the full piece; each step trades a
+   little finish for speed:
+     dripTol  how close neighbouring drip columns must be to share a draw
+     twinkle  the star layer's second, offset pass
+     scale    canvas resolution (the canvas is stretched back to the window)
+     fpsCap   frames drawn per second, 0 = every display frame */
+const QUALITY = [
+  { dripTol: .75, twinkle: true,  scale: 1,   fpsCap: 0  },
+  { dripTol: 2,   twinkle: false, scale: 1,   fpsCap: 0  },
+  { dripTol: 3,   twinkle: false, scale: .75, fpsCap: 0  },
+  { dripTol: 4,   twinkle: false, scale: .6,  fpsCap: 30 },
+];
+let Q = QUALITY[0];
 
 let vw, vh, dpr, W, H, k, ox, oy;
 function fit() {
   vw = innerWidth; vh = innerHeight;
-  dpr = Math.min(devicePixelRatio || 1, 2);
+  dpr = Math.min(devicePixelRatio || 1, 2) * Q.scale;
   W = Math.round(vw * dpr); H = Math.round(vh * dpr);
-  for (const c of [cv, dark, mask]) { c.width = W; c.height = H; }
+  cv.width = W; cv.height = H;
   const cover = vw / vh >= 0.9;
   const s = cover ? Math.max(vw / IW, vh / IH) : Math.min(vw / IW, vh / IH) * 1.0;
   k = s * dpr; ox = (W - IW * k) / 2; oy = (H - IH * k) / 2;
+  buildBitmaps();
 }
-addEventListener('resize', fit); fit();
+addEventListener('resize', fit);
 
 const toImg = (x, y) => [ (x * dpr - ox) / k, (y * dpr - oy) / k ];
 const minDim = () => Math.min(vw, vh);
 
 /* ───────────── asset loading ───────────── */
-const imgs = {};
+// src: the PNGs as loaded (2400×1350). imgs: what is actually drawn — the
+// same pictures resized once to the canvas's own resolution, so a frame is
+// a straight copy instead of 26 full-screen resamples, and a smaller screen
+// holds smaller pictures in memory. Until those are ready, imgs = src.
+const src = {}, imgs = {};
 const loader = document.getElementById('loader');
 function loadAll() {
   const list = [];
@@ -116,9 +135,37 @@ function loadAll() {
     const im = new Image();
     im.onload = im.onerror = () => { done++; loader.querySelector('i').style.setProperty('--p', (done / list.length * 100) + '%'); res(); };
     im.src = 'assets/' + key + '.png';
-    imgs[key] = im;
+    src[key] = imgs[key] = im;
   })));
 }
+
+let bitmapW = 0, bitmapJob = 0;
+function buildBitmaps() {
+  if (!window.createImageBitmap || !Object.keys(src).length) return;
+  const w = Math.min(IW, Math.round(IW * k)), h = Math.round(w * IH / IW);
+  if (Math.abs(w - bitmapW) < 8) return;
+  const job = ++bitmapJob;
+  Promise.all(Object.keys(src).map(key => {
+    const im = src[key];
+    if (!im.naturalWidth) return Promise.resolve([key, null]);
+    return createImageBitmap(im, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+      .then(bm => [key, bm], () => [key, null]);
+  })).then(list => {
+    if (job !== bitmapJob) { list.forEach(([, bm]) => bm && bm.close && bm.close()); return; }   // a newer size won
+    for (const [key, bm] of list) {
+      if (!bm) continue;
+      const old = imgs[key];
+      imgs[key] = bm;
+      if (old !== src[key] && old.close) old.close();
+    }
+    bitmapW = w;
+  });
+}
+
+// sets Q and sizes the canvas straight away (onLevel runs on create)
+const perf = window.XGPerf
+  ? XGPerf.create({ key: 'tenshi', onLevel: lv => { Q = QUALITY[lv]; fit(); } })
+  : (fit(), { tick() {}, level: 0 });
 
 /* ───────────── state ───────────── */
 let invert = false;                     // false: 천사-01 is the world, 천사-02 is revealed
@@ -175,18 +222,29 @@ function updateDrips(dt) {
     if (D[i] < -40) D[i] = -40;
   }
 }
-function drawDrip(c, img) {
-  let run = -1;
-  for (let i = 0; i <= NC; i++) {
-    const d = i < NC ? D[i] : 0;
-    const flat = i < NC && Math.abs(d) < .6;
-    if (flat) { if (run < 0) run = i; continue; }
-    if (run >= 0) { const sx = run * CW, w = (i - run) * CW; c.drawImage(img, sx, 0, w, BAND, sx, 0, w, BAND); run = -1; }
-    if (i < NC) {
-      const sx = i * CW;
-      c.drawImage(img, sx, 0, CW, TOP, sx, 0, CW + .6, TOP);
-      c.drawImage(img, sx, TOP, CW, BAND - TOP, sx, TOP - .5, CW + .6, BAND - TOP + d + .5);
-    }
+/* The word is cut into 4px columns and each one's lower part is stretched by
+   its own drip depth. Drawing every column on its own was ~1200 drawImage
+   calls a frame; instead:
+   - the rigid tops of the letters never move, so they go down as one strip
+   - neighbouring columns whose depths are within Q.dripTol of each other
+     share one stretched piece (at level 0 that is under a screen pixel)
+   xr limits the work to an artwork-space x range (the spotlight pass). */
+function drawDrip(c, img, xr) {
+  const s = img.width / IW;                 // picture px per artwork px
+  const i0 = xr ? Math.max(0, Math.floor(xr[0] / CW)) : 0;
+  const i1 = xr ? Math.min(NC, Math.ceil(xr[1] / CW)) : NC;
+  if (i1 <= i0) return;
+  const top = s * TOP, low = s * (BAND - TOP);
+  c.drawImage(img, i0 * CW * s, 0, (i1 - i0) * CW * s, top, i0 * CW, 0, (i1 - i0) * CW, TOP);
+  const tol = Q.dripTol;
+  for (let i = i0; i < i1;) {
+    const d0 = D[i];
+    let j = i + 1, sum = d0;
+    while (j < i1 && Math.abs(D[j] - d0) < tol) sum += D[j++];
+    const d = Math.abs(sum / (j - i)) < .6 ? 0 : sum / (j - i);
+    const sx = i * CW, w = (j - i) * CW;
+    c.drawImage(img, sx * s, top, w * s, low, sx, TOP - .5, w + .6, BAND - TOP + d + .5);
+    i = j;
   }
 }
 
@@ -194,18 +252,20 @@ function drawDrip(c, img) {
 let boilSeed = 0, boilT = 0, mosaicOff = [0, 0], mosaicT = 0;
 const rnd = (s) => { const x = Math.sin(s * 127.1) * 43758.5453; return x - Math.floor(x); };
 
-function drawLayer(c, L, v) {
+function drawLayer(c, L, v, xr) {
   const img = imgs[L.n + '-' + v];
-  if (!img || !img.complete || !img.naturalWidth) return;
+  if (!img || !img.width || img.naturalWidth === 0) return;   // an Image still loading, or a broken one
   c.save();
   c.translate(-par.x * L.depth * PAR, -par.y * L.depth * PAR);
   switch (L.fx) {
-    case 'drip': drawDrip(c, img); c.restore(); return;
+    case 'drip': drawDrip(c, img, xr); c.restore(); return;
     case 'twinkle':
       c.globalAlpha = .78 + .22 * Math.sin(now * 1.7);
       c.drawImage(img, 0, 0, IW, IH);
-      c.globalAlpha = .25 + .25 * Math.sin(now * 2.3 + 1);
-      c.drawImage(img, 1.5, -1.5, IW, IH);
+      if (Q.twinkle) {
+        c.globalAlpha = .25 + .25 * Math.sin(now * 2.3 + 1);
+        c.drawImage(img, 1.5, -1.5, IW, IH);
+      }
       break;
     case 'sway':
       c.translate(0, Math.sin(now * .5) * 8);
@@ -244,13 +304,13 @@ function drawLayer(c, L, v) {
   c.restore();
 }
 
-function drawScene(c, v, overlays = true) {
+function drawScene(c, v, overlays = true, xr) {
   const th = THEME[v];
   c.setTransform(1, 0, 0, 1, 0, 0);
   c.globalCompositeOperation = 'source-over';
   c.fillStyle = th.paper; c.fillRect(0, 0, W, H);
   c.setTransform(k, 0, 0, k, ox, oy);
-  for (const L of LAYERS) drawLayer(c, L, v);
+  for (const L of LAYERS) drawLayer(c, L, v, xr);
 
   // ripples only on the base world, so spotlights get no outline
   if (!overlays) return;
@@ -831,13 +891,17 @@ addEventListener('keydown', e => {
 });
 
 /* ───────────── loop ───────────── */
-let last = 0, nextAuto = 0, nextSparkle = 3;
+let last = 0, nextAuto = 0, nextSparkle = 3, lastDrawn = 0;
 function frame(ts) {
+  perf.tick(ts);
+  // at the lightest level, every other display frame is skipped outright
+  if (Q.fpsCap && ts - lastDrawn < 1000 / Q.fpsCap - 4) { requestAnimationFrame(frame); return; }
+  lastDrawn = ts;
   try { step(ts); } catch (err) { console.error(err); }
   requestAnimationFrame(frame);
 }
 window.__tenshi.step = ts => step(ts);
-window.__tenshi.dark = dark; window.__tenshi.mask = mask;
+window.__tenshi.perf = perf;
 function step(ts) {
   if (!W || !H) { if (innerWidth && innerHeight) fit(); return; }
   const t = ts / 1000;
@@ -877,27 +941,35 @@ function step(ts) {
   const base = invert ? '02' : '01', rev = invert ? '01' : '02';
   drawScene(ctx, base);
 
+  // The other world shows through the spotlights. It is drawn straight onto
+  // the stage with the circles as the clip, so only the pixels inside them
+  // are painted — the old way drew the whole second world on a spare canvas,
+  // masked it and copied it back, three full screens of work on every frame
+  // a single tap was still fading.
   if (circles.length) {
-    drawScene(dctx, rev, false);
-    mctx.setTransform(1, 0, 0, 1, 0, 0);
-    mctx.clearRect(0, 0, W, H);
-    mctx.fillStyle = '#000';
-    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    mctx.beginPath();
-    for (const c of circles) if (c.r > .5) { mctx.moveTo(c.x + c.r, c.y); mctx.arc(c.x, c.y, c.r, 0, Math.PI * 2); }
-    mctx.fill('nonzero');
-    dctx.setTransform(1, 0, 0, 1, 0, 0);
-    dctx.globalCompositeOperation = 'destination-in';
-    dctx.drawImage(mask, 0, 0);
-    dctx.globalCompositeOperation = 'source-over';
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(dark, 0, 0);
+    let x0 = Infinity, x1 = -Infinity;
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.beginPath();
+    for (const c of circles) {
+      if (c.r <= .5) continue;
+      ctx.moveTo(c.x + c.r, c.y); ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      x0 = Math.min(x0, c.x - c.r); x1 = Math.max(x1, c.x + c.r);
+    }
+    if (x1 > x0) {
+      ctx.clip();
+      // the drip only needs the columns under the circles (+ parallax slack)
+      const xr = [toImg(x0, 0)[0] - PAR, toImg(x1, 0)[0] + PAR];
+      drawScene(ctx, rev, false, xr);
+    }
+    ctx.restore();
   }
   applyGlitch();
   drawCursor();
 }
 
 loadAll().then(() => {
+  buildBitmaps();
   loader.classList.add('done');
   T0 = performance.now() / 1000;
   for (let i = 0; i < 6; i++) spawnDrip(Math.random() * IW, .8);

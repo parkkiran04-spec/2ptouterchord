@@ -178,6 +178,24 @@
   };
 
   // ---- drawing ----
+  // The arm's shadow as a picture of its own: the sprite is drawn far off the
+  // canvas with a shadow offset that brings only the shadow back on, so what
+  // lands is the blurred silhouette alone. Cached on the sprite, which the
+  // artwork rebuilds whenever the size changes.
+  function bakeShadow(sprite, blur) {
+    const pad = Math.ceil(blur * 1.6);
+    const cv = document.createElement('canvas');
+    cv.width = sprite.width + pad * 2;
+    cv.height = sprite.height + pad * 2;
+    const c = cv.getContext('2d');
+    c.shadowColor = 'rgb(1,62,31)';
+    c.shadowBlur = blur;
+    c.shadowOffsetX = cv.width;
+    c.drawImage(sprite, pad - cv.width, pad);
+    cv.pad = pad;
+    return cv;
+  }
+
   T.draw = function (ctx, pulse) {
     const R = rec.radius, art = DG.artwork;
     const sprite = art.images.tonearm ? art.armSprite(T.length) : null;
@@ -191,8 +209,17 @@
       ctx.rotate(T.angle - art.arm.sprite.angle);
       const s = 1 + lift * 0.03;
       ctx.scale(s, s);
-      ctx.shadowColor = `rgba(1,62,31,${0.18 + lift * 0.22})`;
-      ctx.shadowBlur = (0.02 + lift * 0.06) * R;
+      // The soft green shadow is blurred once into its own picture and laid
+      // down under the arm; a live shadowBlur on a sprite this size cost more
+      // than the rest of the frame on slow screens. Lifting the arm darkens
+      // and spreads it, as the live blur did.
+      const sh = sprite.shadow || (sprite.shadow = bakeShadow(sprite, 0.035 * R));
+      const grow = 1 + lift * 0.05;
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, 0.18 + lift * 0.22);
+      ctx.scale(grow, grow);
+      ctx.drawImage(sh, -sprite.pivotX - sh.pad / dpr, -sprite.pivotY - sh.pad / dpr, sh.width / dpr, sh.height / dpr);
+      ctx.restore();
       ctx.drawImage(sprite, -sprite.pivotX, -sprite.pivotY, w, h);
       ctx.restore();
     }

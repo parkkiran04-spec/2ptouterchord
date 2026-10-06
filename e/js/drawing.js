@@ -28,6 +28,13 @@
     if (D.onChange) D.onChange();
   };
 
+  // A finished dot or line is inked straight onto the cached layer, on top of
+  // what is already there. Only removing something (undo, clear, a dot that
+  // turns into a line) or a new size/colour needs the whole layer redrawn —
+  // which used to happen on every single tap, and grows with every mark.
+  const pendingInk = [];
+  const inkLater = (s) => { if (!D.layerDirty) pendingInk.push(s); };
+
   // ---- input: a press stamps one dot; holding it for longPressMs turns it into a line ----
   D.begin = function (x, y) {
     const now = performance.now();
@@ -77,7 +84,7 @@
     const dot = { id: D.nextId++, brush: D.brushIndex, group: gesture, points: [{ r: p.rn, t: p.t, w }], glow: 0, cells: null, cellsDirty: true };
     D.strokes.push(dot);
     spawnSparkles(dot.points[0], cfg.brushes[dot.brush].color);
-    D.layerDirty = true;
+    inkLater(dot);
     changed();
     return dot;
   }
@@ -96,11 +103,11 @@
     if (apart < cfg.brush.dotWidth) {
       D.current = dot;
       d0.w = cfg.brush.maxWidth;
+      D.layerDirty = true;   // the dot is already inked; it has to come off the layer
     } else {
       D.current = newLine();
     }
     gapped = false;
-    D.layerDirty = true;
     addLinePoint(last.x, last.y, now, true);
     changed();
   }
@@ -131,8 +138,9 @@
     // Re-entering the playable area, or a sudden jump (e.g. a dropped frame while
     // spinning), starts a new line instead of a straight connector.
     if (prev && (gapped || jump > 0.12)) {
+      const done = D.current;
       D.current = newLine();
-      D.layerDirty = true;
+      inkLater(done);
       prev = null;
     }
     gapped = false;
@@ -151,7 +159,7 @@
     D.current = null;
     const p = s.points[s.points.length - 1];
     if (p) spawnSparkles(p, cfg.brushes[s.brush].color);
-    D.layerDirty = true;
+    inkLater(s);
     changed();
   }
 
@@ -306,17 +314,28 @@
     c.setTransform(dpr, 0, 0, dpr, R * dpr, R * dpr);
     for (const s of D.strokes) if (s !== D.current) renderInk(c, s);
     D.layerDirty = false;
+    pendingInk.length = 0;
   };
+
+  function inkPending() {
+    const R = rec.radius, dpr = rec.dpr;
+    const c = D.layer.getContext('2d');
+    c.setTransform(dpr, 0, 0, dpr, R * dpr, R * dpr);
+    for (const s of pendingInk) if (s !== D.current && D.strokes.includes(s)) renderInk(c, s);
+    pendingInk.length = 0;
+  }
 
   D.render = function (c) {
     const R = rec.radius;
-    if (D.layerDirty) D.rebuildLayer();
+    if (D.layerDirty || !D.layer) D.rebuildLayer();
+    else if (pendingInk.length) inkPending();
     c.drawImage(D.layer, -R, -R, R * 2, R * 2);
     if (D.current) renderInk(c, D.current);
 
+    const wideGlow = !DG.quality || DG.quality.wideGlow;
     for (const s of D.strokes) {
       if (s.glow <= 0.02) continue;
-      renderStroke(c, s, { alpha: s.glow * 0.35, widthMul: 2.6, jitter: 0, composite: 'lighter' });
+      if (wideGlow) renderStroke(c, s, { alpha: s.glow * 0.35, widthMul: 2.6, jitter: 0, composite: 'lighter' });
       renderStroke(c, s, { alpha: s.glow * 0.55, widthMul: 0.9, jitter: 0.55, color: '#fff6e6', mono: '#ffffff', composite: 'lighter' });
     }
   };

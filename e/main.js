@@ -23,6 +23,18 @@
   let blClock = 0;
   DG.stats = { frames: 0, renders: 0 }; // frames run the music, renders draw the picture
   let lastFrame = performance.now();
+  let stageDirty = false;
+
+  // Quality, stepped down by shared/perf.js on screens that can't keep up
+  // (TVs, kiosk tablets): the canvas resolution, and from level 2 the wide
+  // outer glow on lines that have just sounded.
+  const QUALITY = [
+    { scale: 1,   wideGlow: true },
+    { scale: .85, wideGlow: true },
+    { scale: .7,  wideGlow: false },
+    { scale: .55, wideGlow: false },
+  ];
+  DG.quality = QUALITY[0];
 
   // ---------- layout ----------
   function resize() {
@@ -32,7 +44,7 @@
     if (r.width < 8 || r.height < 8) return;
     W = r.width;
     H = r.height;
-    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    dpr = Math.min(window.devicePixelRatio || 1, 2.5) * DG.quality.scale;
     canvas.width = Math.round(W * dpr);
     canvas.height = Math.round(H * dpr);
 
@@ -195,7 +207,7 @@
     const next = art.lineGrowth + (target - art.lineGrowth) * (1 - Math.exp(-dt / tau));
     if (Math.abs(next - art.lineGrowth) > 0.002) {
       art.lineGrowth = next;
-      stage = renderStage();
+      stageDirty = true;   // redrawn with the next picture, not on every frame in between
     }
     for (const r of ripples) r.age += dt;
     ripples = ripples.filter((r) => r.age < r.life);
@@ -280,6 +292,7 @@
     if (W < 8 || H < 8) return;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
+    if (stageDirty) { stage = renderStage(); stageDirty = false; }
     if (stage) ctx.drawImage(stage, 0, 0, W, H);
     rec.render(ctx, (c) => {
       D.render(c);
@@ -316,11 +329,12 @@
     art.mono = active;
     D.mono = active;
     D.layerDirty = true;       // the cached ink is a different colour now
-    stage = renderStage();
+    stageDirty = true;
     document.body.classList.toggle('bl', active);
   }
 
   function frame(now) {
+    perf.tick(now);
     const dt = Math.min(0.05, Math.max(0, (now - lastFrame) / 1000));
     lastFrame = now;
     updateBlState(dt);
@@ -431,6 +445,11 @@
   window.addEventListener('resize', resize);
   if (window.ResizeObserver) new ResizeObserver(resize).observe(wrap);
 
+  // picks the starting quality (remembered per device) and sizes the canvas
+  const perf = window.XGPerf
+    ? XGPerf.create({ key: 'e', onLevel: (lv) => { DG.quality = QUALITY[lv]; resize(); } })
+    : { tick() {}, level: 0 };
+  DG.perf = perf;
   resize();
   art.load().then(() => {
     resize();
