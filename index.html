@@ -73,9 +73,16 @@
      the word inside keeps its full width and slides out from under the
      right edge.
 
-     The numbers are measured off the file, which is 1400x265: the mark
-     runs to x=228 with a clear gap before the U at x=285, so the window
-     opens at 255/1400 of the width; the wordmark band ends at y=216 and
+     The numbers are measured off the file, which is 1400x265. The O's
+     right side doubles as the U's left stem — the U's thick stroke runs
+     down the O's lower right and its hairline bowl out to x≈294 — so no
+     straight window can hold the O without a piece of the U. While the
+     mark is alone it is drawn from logo-mark.png instead: the same sheet
+     with only the compass O left on it (the right half rebuilt from the
+     left half's own outline, so the U's stem comes away and the needle tip
+     stays). The full sheet takes over as the word starts to slide out. The
+     window opens at 232/1400, just past the needle's tip at x=228; the
+     wordmark band ends at y=216 and
      the Korean line starts at y=224, which is where the two are split onto
      their own elements. The window is centred, so the lockup is centred at
      both ends and the mark drifts left as the word arrives. */
@@ -94,13 +101,14 @@
   }
   .openlogo__line{
     overflow:hidden;
-    width: calc(var(--logo-w) * 255 / 1400);
+    width: calc(var(--logo-w) * 232 / 1400);
   }
   .openlogo__word{
     width: var(--logo-w);
     height: calc(var(--logo-w) * 216 / 1400);
-    background: url('main-assets/logo.png') 0 0 / 100% auto no-repeat;
+    background: url('main-assets/logo-mark.png') 0 0 / 100% auto no-repeat;
   }
+  .openlogo__word.is-word{ background-image: url('main-assets/logo.png'); }
   .openlogo__sub{
     width: var(--logo-w);
     height: calc(var(--logo-w) * 41 / 1400);
@@ -124,8 +132,10 @@
     margin:18px 0 0;
     font-size:13px;
     line-height:1.7;
+    letter-spacing:-0.05em;    /* tracking -50 */
     color: var(--muted);
     font-weight:400;
+    white-space:nowrap;        /* the two sentences break where the <br> says, nowhere else */
   }
 
   /* bottom-left hint */
@@ -384,7 +394,7 @@
 
   <div class="panel-left">
     <h1 style="margin:0"><img class="logo" src="main-assets/logo.png" alt="OUTER CHORD — 성간 미아를 위한 불협화음"></h1>
-    <p>드래그, 휠, 스와이프로 프로젝트를 탐색하세요. 카드를 더블클릭하면 상세 페이지로 이동합니다.</p>
+    <p>드래그, 휠, 스와이프로 프로젝트를 탐색하세요.<br>카드를 더블클릭하면 상세 페이지로 이동합니다.</p>
   </div>
 
   <div class="hint">
@@ -485,6 +495,8 @@
   gsap.ticker.add(reseedHold);
 
   /* ---------------- Data ---------------- */
+  const CARD_PERSPECTIVE = 650;   // px; see the hover lean further down
+
   const projects = [
     /* `panel` / `ink` drive the detail view the card opens into: the solid
        field that grows out of the middle and the type that sits on it.
@@ -732,7 +744,10 @@
     // the fan is flat: cards face the viewer and only turn in the plane
     // the fan is flat, but each card carries its own perspective so it can
     // lean toward the cursor without the whole arc sharing a vanishing point
-    gsap.set(card, { xPercent:-50, yPercent:-50, transformPerspective: 900 });
+    // a short perspective, so a leaning card's near edge visibly swells and
+    // its far edge shrinks — the depth reads at a glance rather than as a
+    // slight skew
+    gsap.set(card, { xPercent:-50, yPercent:-50, transformPerspective: CARD_PERSPECTIVE });
     return card;
   });
 
@@ -895,8 +910,9 @@
      sketched line draws itself round the edge. The lean uses rotationX/Y
      and z, none of which the arc layout writes, so the two can run over
      each other without fighting for the same transform. */
-  const TILT_MAX = 14;      // degrees at the far corner of a card
-  const TILT_LIFT = 46;     // how far it comes forward, in px
+  const TILT_MAX = 24;      // degrees at the far corner of a card
+  const TILT_LIFT = 52;     // how far it comes forward, in px — against the
+                            // 650px perspective that is about 9% bigger
 
   /* Each ring is a single unbroken stroke, not a dashed one: one long arc
      that wraps almost the whole way round with one travelling gap where
@@ -1143,6 +1159,9 @@
     const openLogo = document.getElementById('openLogo');
     const openLogoLine = document.getElementById('openLogoLine');
     const openLogoSub = document.getElementById('openLogoSub');
+    const openLogoWord = openLogoLine.querySelector('.openlogo__word');
+    // fetched now so the swap at the word's entrance never waits on the network
+    new Image().src = 'main-assets/logo.png';
     gsap.set([panelLeft, panelRight, hintEl, chordBtn], { opacity: 0 });
 
     gsap.timeline({ onComplete: () => { opening.running = false; } })
@@ -1162,6 +1181,9 @@
       // the mark arrives in the middle of the ring, and the word unfolds
       // out beside it; the Korean line joins once it is all the way out
       .to(openLogo, { opacity: 1, duration: 0.5, ease: 'power1.out' }, 2.9)
+      // the O alone is its own sheet (no sliver of the U beside it); the
+      // full wordmark swaps in just as the word starts to come out
+      .call(() => openLogoWord.classList.add('is-word'), null, 3.6)
       .to(openLogoLine, { width: '100%', duration: 1.1, ease: 'power3.inOut' }, 3.6)
       .to(openLogoSub, { opacity: 1, duration: 0.5, ease: 'power1.out' }, 4.7)
       // and it clears out before the fan sweeps through the middle
