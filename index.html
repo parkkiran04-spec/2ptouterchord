@@ -128,21 +128,13 @@
     width: clamp(200px, 17vw, 330px);
     height:auto;
   }
-  .panel-left p{
-    margin:18px 0 0;
-    font-size:13px;
-    line-height:1.7;
-    letter-spacing:-0.05em;    /* tracking -50 */
-    color: var(--muted);
-    font-weight:400;
-    white-space:nowrap;        /* the two sentences break where the <br> says, nowhere else */
-  }
 
   /* bottom-left hint */
   .hint{
     position:fixed; left:56px; bottom:44px; z-index:30;
     display:flex; align-items:center; gap:10px;
-    font-size:11px; letter-spacing:1.4px; text-transform:uppercase;
+    font-family:'Pretendard Variable', Pretendard, 'Inter', sans-serif;
+    font-size:12px; letter-spacing:0.5px;
     color: var(--muted);
     /* opacity is driven by GSAP, which is already stop-motion stepped */
   }
@@ -288,8 +280,8 @@
   .card{
     position:absolute;
     top:50%; left:50%;
-    width: clamp(200px, 20vw, 300px);
-    height: clamp(200px, 20vw, 300px);
+    width: clamp(180px, 17vw, 260px);
+    height: clamp(180px, 17vw, 260px);
     aspect-ratio: 1 / 1;
     will-change: transform, opacity;
   }
@@ -325,7 +317,6 @@
     position:absolute; inset:0;
     border-radius:4px;
     overflow:hidden;
-    border:1px solid rgba(255,255,255,0.55);
     box-shadow:
       0 30px 70px -18px rgba(20,20,15,0.35),
       0 6px 18px -6px rgba(20,20,15,0.12);
@@ -394,12 +385,11 @@
 
   <div class="panel-left">
     <h1 style="margin:0"><img class="logo" src="main-assets/logo.png" alt="OUTER CHORD — 성간 미아를 위한 불협화음"></h1>
-    <p>드래그, 휠, 스와이프로 프로젝트를 탐색하세요.<br>카드를 더블클릭하면 상세 페이지로 이동합니다.</p>
   </div>
 
   <div class="hint">
     <span class="dot"></span>
-    <span>Drag / Scroll — Double Click to Open</span>
+    <span>드래그 / 스크롤 — 더블클릭해서 열기</span>
   </div>
 
   <div class="panel-right">
@@ -510,10 +500,11 @@
       panel:"#031927", ink:"#bb1100", body:["캐틀 뮤틸레이션은 소 등 가축이 도륙되어","내부의 피와 내장만 사라진 채 죽은 현상을 일컫는다","외계로의 납치 그리고","육신으로부터의 탈출!"] },
     { id:2, title:"The Sound of Not the Earth", desc:"Voyager Golden Record", url:"e/index.html", bg:"url('e/thumb.webp') center/cover no-repeat, #111",
       panel:"#bc2d0b", ink:"#cfccc2", body:["보이저 골든 레코드는 보이저 탐사선 두 대에 실린 축음기 음반으로","외계 생명체에게 인류의 메세지를 전달하고자","지구의 모습과 소리를 담은 LP 디스크이다.","언젠가 돌아갈 외계로 단 하나 메세지를 전한다면","어떤 음을 넣을 것인가…"] },
-    { id:3, title:"Noctiluca",         desc:"Bio-Matrix",       url:"d/index.html",      bg:"linear-gradient(135deg,#0b1e3a,#1fa3a0)",
-      panel:"#8E1F17", ink:"#3BA8C4", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
-    { id:4, title:"I'm Not an Alien",  desc:"Y2K",              url:"imnota/index.html", bg:"url('imnota/assets/space.webp') center/cover no-repeat, #111",
-      panel:"#5f9fe6", ink:"#f0f0f0", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
+    // panel / ink taken off each thumbnail: its ground, and its brightest line colour
+    { id:3, title:"Noctiluca",         desc:"Bio-Matrix",       url:"d/index.html",      bg:"url('d/thumb.webp') center/cover no-repeat, #0f1112",
+      panel:"#0f1112", ink:"#36eaf7", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
+    { id:4, title:"I'm Not an Alien",  desc:"Y2K",              url:"imnota/index.html", bg:"url('imnota/thumb.webp') center/cover no-repeat, #2b2323",
+      panel:"#2b2323", ink:"#c7b9e6", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
     { id:5, title:"Tenshi no Tsubasa", desc:"천사의 날개",       url:"tenshi/index.html", bg:"url('tenshi/thumb.webp') center/cover no-repeat, #111",
       panel:"#0000ff", ink:"#f0f0f0", body:["외계인들이 손에 쥔 무기는 보통 예술이다","외롭거나 괴로운 자들의 영역…","이것만은 영원히 당신의 편"] },
   ];
@@ -903,6 +894,7 @@
       springCarry -= SPRING_STEP;
     }
     if (!activated) renderStack();
+    updateResting();
   });
 
   /* ---------------- Hover: lean and line ----------------
@@ -913,6 +905,39 @@
   const TILT_MAX = 24;      // degrees at the far corner of a card
   const TILT_LIFT = 52;     // how far it comes forward, in px — against the
                             // 650px perspective that is about 9% bigger
+
+  /* A card comes forward by that lift while the pointer is on it, and also
+     while it is the card the fan has come to rest on in the middle — so
+     scrolling a card into place picks it out the same way a hover does.
+     Both ask for the same lift, so a hovered card in the middle does not
+     double up; it only drops back once neither holds. */
+  let hoveredCard = null, restingCard = null;
+  const liftTarget = new Map();
+
+  function updateLift(card){
+    const want = (card === hoveredCard || card === restingCard) ? TILT_LIFT : 0;
+    if (liftTarget.get(card) === want) return;
+    liftTarget.set(card, want);
+    gsap.to(card, want
+      ? { z: want, duration: 0.45, ease: 'power2.out', overwrite: 'auto' }
+      : { z: 0,    duration: 0.5,  ease: 'power3.out', overwrite: 'auto' });
+  }
+
+  // Run every frame from the stack's own ticker. "At rest" means the spring
+  // has settled on a whole card and nothing is pulling it: no drag, no
+  // wheel still easing in, no opening, no card open.
+  function updateResting(){
+    const settled = !activated && !opening.running && !isDragging
+      && targetIndex === Math.round(targetIndex)
+      && Math.abs(targetIndex - currentDisplay) < 0.015
+      && Math.abs(springVel) < 0.08;
+    const next = settled ? cardEls[((Math.round(currentDisplay) % n) + n) % n] : null;
+    if (next === restingCard) return;
+    const prev = restingCard;
+    restingCard = next;
+    if (prev) updateLift(prev);
+    if (next) updateLift(next);
+  }
 
   /* Each ring is a single unbroken stroke, not a dashed one: one long arc
      that wraps almost the whole way round with one travelling gap where
@@ -985,7 +1010,8 @@
          offset negative, sends the gap round clockwise. The rings keep
          going for as long as the pointer stays on the card. */
       rings.forEach(r => liveRings.add(r));
-      gsap.to(card, { z: TILT_LIFT, duration: 0.4, ease: 'power2.out' });
+      hoveredCard = card;
+      updateLift(card);
     });
 
     card.addEventListener('pointermove', e => {
@@ -1004,8 +1030,10 @@
       // the rings keep stepping round as they fade, rather than stopping dead
       gsap.to(svg, { opacity: 0, duration: 0.28,
                      onComplete: () => rings.forEach(r => liveRings.delete(r)) });
-      gsap.to(card, { rotationX: 0, rotationY: 0, z: 0,
+      gsap.to(card, { rotationX: 0, rotationY: 0,
                       duration: 0.5, ease: 'power3.out' });
+      if (hoveredCard === card) hoveredCard = null;
+      updateLift(card);   // stays forward if it is still the card at rest
     });
   });
 
@@ -1017,6 +1045,10 @@
     gsap.killTweensOf([svg, card]);
     gsap.set(svg, { opacity: 0 });
     gsap.set(card, { rotationX: 0, rotationY: 0, z: 0 });
+    liftTarget.set(card, 0);
+    // the fan picks its resting card again once it is back
+    if (hoveredCard === card) hoveredCard = null;
+    if (restingCard === card) restingCard = null;
     // only one card is ever hovered, so there is nothing left to step
     liveRings.clear();
   }
@@ -1379,11 +1411,10 @@
         duration: 0.6, ease: 'power3.inOut'
       }, 0.42)
 
-      // the stack's rounding, hairline and drop shadow all belong to the
-      // deck, not to a piece of artwork lying flat on a colour field
+      // the stack's rounding and drop shadow belong to the deck, not to a
+      // piece of artwork lying flat on a colour field
       .to(inner, {
         borderRadius: 0,
-        borderColor: 'rgba(255,255,255,0)',
         boxShadow: '0 30px 70px -18px rgba(20,20,15,0), 0 6px 18px -6px rgba(20,20,15,0)',
         duration: 0.6, ease: 'power3.inOut'
       }, 0.42)
