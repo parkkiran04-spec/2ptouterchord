@@ -10,6 +10,7 @@
 #   /imnota/api/sounds  /imnota/api/sounds/dates  /imnota/api/sounds/<date>         -> imnota/sound-archive/YYYY-MM-DD.jsonl
 #   /tenshi/memory                      GET | POST                                  -> tenshi/memory/sounds.jsonl
 #   /api/reset                          POST  moves all of the above to archive/<time>/ (make chord calls it)
+#   /api/songs                          GET | POST  the songs make chord has made     -> songs/songs.jsonl
 #   everything else                     static files from this folder
 param([int]$Port = 8765)
 
@@ -309,6 +310,46 @@ function Handle-E($ctx, [string]$sub) {
 }
 
 # =====================================================================
+# song archive  (every song make chord has made; records/ lists them)
+#   POST /api/songs  {id, createdAt, code, ...} -> appended to songs/songs.jsonl
+#   GET  /api/songs  -> JSON array, one entry per id (the last one written
+#                       wins, so a remake replaces its visit's song)
+#   Not touched by /api/reset: the songs are the point of the archive.
+# =====================================================================
+$songDir = Join-Path $root 'songs'
+New-Item -ItemType Directory -Force $songDir | Out-Null
+$songFile = Join-Path $songDir 'songs.jsonl'
+
+function Handle-Songs($ctx) {
+  $req = $ctx.Request
+  if ($req.HttpMethod -eq 'POST') {
+    if ($req.ContentLength64 -gt 64KB) { SendObj $ctx 413 @{ ok = $false; error = 'too large' }; return }
+    $body = ReadBody $req
+    $o = $null
+    try { $o = $body | ConvertFrom-Json } catch {}
+    if (-not $o -or -not ($o.id -match '^[a-z0-9]{4,32}$') -or -not ($o.code -match '^[A-Z2-7]{8,8000}$')) {
+      SendObj $ctx 400 @{ ok = $false; error = 'bad song' }; return
+    }
+    $o | Add-Member -NotePropertyName savedAt -NotePropertyValue ((Get-Date).ToString('o')) -Force
+    [IO.File]::AppendAllText($songFile, (($o | ConvertTo-Json -Compress -Depth 6) + "`n"), $utf8)
+    SendObj $ctx 200 @{ ok = $true }
+  }
+  elseif ($req.HttpMethod -eq 'GET') {
+    # keep the last line per id, in the order the ids first appeared
+    $byId = [ordered]@{}
+    if (Test-Path $songFile) {
+      foreach ($ln in [IO.File]::ReadLines($songFile)) {
+        if (-not $ln.Trim()) { continue }
+        $m = [regex]::Match($ln, '"id":"([a-z0-9]+)"')
+        if ($m.Success) { $byId[$m.Groups[1].Value] = $ln }
+      }
+    }
+    SendText $ctx 200 ('[' + (@($byId.Values) -join ',') + ']')
+  }
+  else { SendText $ctx 405 '{"error":"method"}' }
+}
+
+# =====================================================================
 # reset  (called by "make chord" once it has made its song)
 #   POST /api/reset -> every piece's sound files move to archive/<time>/<piece>/
 #   and the pieces start collecting from nothing. Nothing is deleted.
@@ -350,7 +391,7 @@ Write-Host "  data : cattlemutilation\data, d\sound-data, imnota\sound-archive, 
 Write-Host "  stop : Ctrl+C"
 
 # data folders are written by the server, never served as plain files
-$blocked = '^(archive|cattlemutilation/data|e/sound-data|d/sound-data|imnota/sound-archive)(/|$)|(^|/)\.|\.ps1$|\.bat$'
+$blocked = '^(archive|songs|cattlemutilation/data|e/sound-data|d/sound-data|imnota/sound-archive)(/|$)|(^|/)\.|\.ps1$|\.bat$'
 
 while ($l.IsListening) {
   $ctx = $l.GetContext()
@@ -360,6 +401,7 @@ while ($l.IsListening) {
     if ($req.HttpMethod -eq 'OPTIONS') { Send $ctx 204 $null $null; continue }
 
     if ($path -eq '/api/reset') { Handle-Reset $ctx; continue }
+    if ($path -eq '/api/songs') { Handle-Songs $ctx; continue }
 
     # ---- per-piece APIs ----
     $handled = $false

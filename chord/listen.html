@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#191818">
+<title>Outer Chord — 나의 곡</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<style>
+  /* The page a visitor lands on after scanning the QR code from make
+     chord: their song, rebuilt here from the code in the address, to play
+     and to save onto the phone. Phone first; it reads fine on a desktop. */
+  :root{
+    --bg:#191818; --ink:#e8e2d4; --muted:rgba(232,226,212,.6); --faint:rgba(232,226,212,.16); --red:#b01d12;
+  }
+  *,*::before,*::after{ box-sizing:border-box; }
+  html,body{ margin:0; min-height:100%; background:var(--bg); color:var(--ink);
+    font-family:'Pretendard Variable', Pretendard, 'Inter', sans-serif; -webkit-font-smoothing:antialiased; }
+  body{ min-height:100svh; }
+  .backdrop{ position:fixed; inset:0; pointer-events:none; opacity:.4;
+    background:var(--bg) url('../main-assets/background.jpg') center / cover no-repeat; }
+  main{ position:relative; max-width:520px; margin:0 auto;
+    padding:max(20px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+    display:flex; flex-direction:column; align-items:center; gap:18px; text-align:center; }
+  .logo{ width:min(62vw, 260px); height:auto; margin-top:6px; }
+  .kicker{ font:500 11px/1 'Inter', sans-serif; letter-spacing:.24em; color:var(--muted); text-transform:uppercase; }
+  canvas{ display:block; width:min(86vw, 52svh, 420px); aspect-ratio:1; }
+  .title{ margin:0; font:italic 500 clamp(26px, 8vw, 38px)/1.1 'Playfair Display', serif; }
+  .meta{ font:500 12px/1.8 'Inter', sans-serif; letter-spacing:.08em; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .legend{ list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; justify-content:center; gap:6px 14px;
+    font:12px/1.6 'Inter', sans-serif; color:var(--muted); }
+  .legend li{ display:flex; align-items:center; gap:6px; }
+  .legend .dot{ width:8px; height:8px; border-radius:50%; }
+  .actions{ display:grid; gap:10px; width:100%; margin-top:4px; }
+  .actions button, .actions a{
+    appearance:none; display:block; width:100%; padding:16px 18px; border-radius:999px; cursor:pointer;
+    font:600 14px/1 'Pretendard Variable', Pretendard, 'Inter', sans-serif; letter-spacing:.04em; text-decoration:none;
+    border:1px solid var(--ink); background:transparent; color:var(--ink); }
+  .actions .primary{ background:var(--red); border-color:var(--red); }
+  .actions button:disabled{ opacity:.35; cursor:default; }
+  audio{ width:100%; }
+  .note{ font-size:12.5px; line-height:1.75; color:var(--muted); }
+  .error{ margin-top:30vh; font-size:15px; line-height:1.9; }
+  .site{ font:500 11px/1 'Inter', sans-serif; letter-spacing:.2em; color:var(--muted); text-transform:uppercase; }
+  [hidden]{ display:none !important; }
+</style>
+</head>
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+
+<main>
+  <img class="logo" src="../main-assets/logo.png" alt="OUTER CHORD — 성간 미아를 위한 불협화음">
+  <div class="kicker">Your Chord</div>
+
+  <section id="song" hidden>
+    <div style="display:flex; flex-direction:column; align-items:center; gap:16px;">
+      <canvas id="record" aria-label="이 곡의 레코드"></canvas>
+      <h1 class="title" id="title">—</h1>
+      <div class="meta" id="meta"></div>
+      <ul class="legend" id="legend"></ul>
+      <div class="actions">
+        <button type="button" class="primary" id="playBtn">▶ 재생</button>
+        <button type="button" id="saveBtn">⤓ 휴대폰에 저장 (WAV)</button>
+        <audio id="audio" controls hidden></audio>
+      </div>
+      <p class="note" id="note">저장을 누르면 이 휴대폰에서 곡을 만들어 파일로 내려받습니다.<br>잠시(5~20초) 걸릴 수 있어요.</p>
+    </div>
+  </section>
+
+  <p class="error" id="error" hidden></p>
+
+  <a class="site" href="../index.html">Outer Chord 전시 보기 →</a>
+</main>
+
+<script src="../shared/outer-chord.js"></script>
+<script>
+(function(){
+'use strict';
+const OC = window.OuterChord;
+const $ = id => document.getElementById(id);
+const canvas = $('record'), g = canvas.getContext('2d');
+let song = null, player = null, spin = 0, dpr = 1, size = 300;
+
+function fail(text){ $('song').hidden = true; $('error').hidden = false; $('error').textContent = text; }
+
+function resize(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  size = canvas.getBoundingClientRect().width || 300;
+  canvas.width = canvas.height = Math.round(size * dpr);
+}
+function draw(){
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, size, size);
+  // a little room top-right for the arm
+  const R = size * .44;
+  OC.drawRecord(g, size * .47, size * .53, R, song, player && player.playing ? player.time() : -1,
+                { spin, tonearm: true, restAlpha: .5 });
+}
+let next = 0;
+function loop(ts){
+  if (ts >= next) {
+    next = ts + (1000 / 24) * (1 + (Math.random() * 2 - 1) * .15);
+    if (!(player && player.playing)) spin += .012;
+    if (song) draw();
+  }
+  requestAnimationFrame(loop);
+}
+
+async function start(){
+  const code = decodeURIComponent(location.hash.slice(1));
+  if (!code) return fail('곡 정보가 없는 주소입니다. 전시장의 QR 코드를 다시 찍어 주세요.');
+  let compact;
+  try { compact = await OC.decode(code); }
+  catch (err) { return fail('곡을 읽지 못했습니다. QR 코드를 다시 찍어 주세요.'); }
+
+  song = OC.expand(compact);
+  $('song').hidden = false;
+  $('title').textContent = OC.chordName(song.barInfo[0].chord);
+  $('meta').textContent = `${song.bars}마디 · ${OC.BPM} BPM · ${OC.fmt(song.length)}`;
+  const counts = {};
+  for (const n of song.notes) if (n.src) counts[n.src] = (counts[n.src] || 0) + 1;
+  $('legend').innerHTML = OC.ORDER.filter(k => counts[k]).map(k =>
+    `<li><span class="dot" style="background:${OC.SOURCES[k].color}"></span>${OC.SOURCES[k].name}</li>`).join('');
+
+  player = OC.player(song, () => { $('playBtn').textContent = '▶ 재생'; });
+  resize();
+  draw();
+  requestAnimationFrame(loop);
+  window.addEventListener('resize', () => { resize(); draw(); });
+
+  $('playBtn').addEventListener('click', () => {
+    if (player.playing) { player.stop(); $('playBtn').textContent = '▶ 재생'; }
+    else { player.play(); $('playBtn').textContent = '■ 정지'; }
+  });
+
+  // The file is made right here on the phone. Some phones will not save a
+  // download from a page, so the finished file is also put in a player,
+  // whose own menu can save or share it.
+  let wav = null;
+  const name = `outer-chord-${code.slice(0, 6).toLowerCase()}.wav`;
+  $('saveBtn').addEventListener('click', async () => {
+    const btn = $('saveBtn');
+    if (!wav) {
+      btn.disabled = true; btn.textContent = '만드는 중…';
+      try { wav = await OC.renderWav(song); }
+      catch (err) { btn.disabled = false; btn.textContent = '⤓ 휴대폰에 저장 (WAV)'; $('note').textContent = '파일을 만들지 못했습니다: ' + err.message; return; }
+      btn.disabled = false; btn.textContent = '⤓ 다시 저장';
+      const audio = $('audio');
+      audio.src = URL.createObjectURL(wav);
+      audio.hidden = false;
+      $('note').innerHTML = '저장이 되지 않으면 위 플레이어의 메뉴(⋮ 또는 공유)에서<br>저장하거나 공유할 수 있어요.';
+    }
+    OC.download(wav, name);
+  });
+}
+start();
+})();
+</script>
+</body>
+</html>

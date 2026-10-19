@@ -134,9 +134,14 @@
   <button type="button" class="primary" id="playBtn" disabled>▶ 재생</button>
   <button type="button" id="remakeBtn" disabled>↻ 다시 만들기</button>
   <button type="button" id="saveBtn" disabled>⤓ WAV 저장</button>
+  <button type="button" id="qrBtn" disabled>▦ QR로 받기</button>
+  <button type="button" id="archiveBtn" disabled>≡ 아카이브</button>
 </div>
 
 <div class="message" id="message" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="../shared/outer-chord.js"></script>
 
 <script>
 (function(){
@@ -145,17 +150,12 @@
 /* =====================================================================
    1. Where the sounds come from
    ===================================================================== */
-const SOURCES = {
-  cattle: { name: 'Cattle Mutilation',          color: '#e0442c' },
-  e:      { name: 'The Sound of Not the Earth', color: '#7cc9a4' },
-  d:      { name: 'Noctiluca',                  color: '#2fb3c2' },
-  imnota: { name: "I'm Not an Alien",           color: '#7f95ff' },
-  tenshi: { name: 'Tenshi no Tsubasa',          color: '#f0ead8' },
-};
-const ORDER = Object.keys(SOURCES);
+// the synth, the record, the song format and the archive live in
+// shared/outer-chord.js, which the phone page and the archive use too
+const OC = window.OuterChord;
+const { SOURCES, ORDER, BPM, BEAT, BAR, STEPS, STEP, NAMES, clamp, fold } = OC;
 
 const hz2midi = f => 69 + 12 * Math.log2(f / 440);
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const num = (v, d) => (typeof v === 'number' && isFinite(v) ? v : d);
 
 /* Every piece logs in its own shape; they all come out of here as
@@ -291,14 +291,10 @@ async function collect(){
 
 /* =====================================================================
    2. Composing: the archive, read front to back, becomes a row of bars
+   The result is the compact song (see shared/outer-chord.js): every value
+   already rounded to what the phone page and the archive will decode, so
+   the song played here is exactly the one that leaves in the QR code.
    ===================================================================== */
-const BPM = 84;
-const BEAT = 60 / BPM;
-const BAR = BEAT * 4;
-const STEPS = 16;
-const STEP = BAR / STEPS;
-const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
-
 function mulberry32(a){
   return function(){
     a |= 0; a = a + 0x6D2B79F5 | 0;
@@ -320,7 +316,6 @@ function sample(list, k, rnd){
   while (idx.size < k) idx.add(Math.floor(rnd() * list.length));
   return [...idx].sort((a, b) => a - b).map(i => list[i]);
 }
-const fold = (m, lo, hi) => { while (m < lo) m += 12; while (m > hi) m -= 12; return m; };
 
 function compose(events, seed){
   const rnd = mulberry32(seed);
@@ -331,11 +326,10 @@ function compose(events, seed){
   const bars = clamp(Math.round(Math.sqrt(tones.length || hits.length) * 1.6), 8, 32);
   const toneGroups = slices(tones, bars);
   const hitGroups = slices(hits, bars);
-  const notes = [], drums = [], barInfo = [];
+  const c = { v: 1, bars, chords: [], mel: [], dr: [] };
   let chord = [0, 4, 7];   // only used if the archive opens with silence
 
   for (let b = 0; b < bars; b++) {
-    const t0 = b * BAR;
     const group = toneGroups[b];
 
     // --- the chord: the pitch classes that sounded most in this stretch ---
@@ -345,198 +339,35 @@ function compose(events, seed){
       const top = w.map((v, pc) => [v, pc]).filter(x => x[0] > 0).sort((a, b) => b[0] - a[0]).slice(0, 3).map(x => x[1]);
       if (top.length) chord = top;
     }
-    const root = chord[0];
-    const pad = chord.map(pc => fold(pc + 48, 55, 66)).sort((a, b) => a - b);
-    for (const m of pad) notes.push({ t: t0, dur: BAR * 1.02, midi: m, vel: .5, voice: 'pad', pan: (m - 60) / 12 });
-    notes.push({ t: t0, dur: BEAT * 2.2, midi: fold(root + 36, 33, 44), vel: .8, voice: 'bass', pan: 0 });
-    notes.push({ t: t0 + BEAT * 2, dur: BEAT * 1.8, midi: fold(root + 36, 33, 44), vel: .55, voice: 'bass', pan: 0 });
+    c.chords.push(chord.slice());
 
     // --- the melody: the actual sounds, in the order they were made ---
     const picked = sample(group, 12, rnd);
-    picked.forEach((e, i) => {
+    c.mel.push(picked.map((e, i) => {
       let step = Math.floor(i * STEPS / picked.length);
       if (rnd() < .3) step = Math.min(STEPS - 1, step + 1);
       const steps = clamp(Math.round(e.dur / STEP), 1, 8);
-      notes.push({
-        t: t0 + step * STEP, dur: steps * STEP, midi: fold(Math.round(e.midi), 55, 88),
-        vel: .3 + e.vel * .7, voice: e.src, src: e.src,
-        pan: e.pan != null ? e.pan * .8 : (rnd() * 2 - 1) * .6,
-      });
-    });
+      const pan = e.pan != null ? e.pan : (rnd() * 2 - 1) * .75;
+      return [step, fold(Math.round(e.midi), 55, 88), steps, OC.q7(e.vel), ORDER.indexOf(e.src), OC.qPan(pan)];
+    }));
 
     // --- percussion: heartbeats land on the beat, glass on the offbeats ---
-    sample(hitGroups[b], 8, rnd).forEach((e, i, arr) => {
+    c.dr.push(sample(hitGroups[b], 8, rnd).map((e, i, arr) => {
       let step = Math.floor(i * STEPS / arr.length);
       if (e.kind === 'kick') step = Math.round(step / 4) * 4 % STEPS;
       else if (e.kind === 'tick') step = (Math.floor(step / 2) * 2 + 2) % STEPS;
       else step = step < 8 ? 0 : 8;
-      drums.push({ t: t0 + step * STEP, kind: e.kind, vel: e.vel, pan: e.pan != null ? e.pan * .7 : 0, src: e.src });
-    });
-
-    const from = {};
-    for (const e of group) from[e.src] = (from[e.src] || 0) + 1;
-    barInfo.push({ t: t0, chord: chord.slice(), from });
+      return [step, OC.KINDS.indexOf(e.kind), OC.qHit(e.vel), OC.qPan(e.pan != null ? e.pan : 0)];
+    }));
   }
-
-  return { bars, notes, drums, barInfo, length: bars * BAR, tail: 3.5 };
+  return c;
 }
 
 /* =====================================================================
-   3. Sound: one small synth per piece, built fresh for every playback
-   ===================================================================== */
-const m2f = m => 440 * Math.pow(2, (m - 69) / 12);
-
-function buildGraph(ctx){
-  const master = ctx.createGain(); master.gain.value = .7;
-  const comp = ctx.createDynamicsCompressor();
-  comp.threshold.value = -16; comp.ratio.value = 4; comp.attack.value = .01; comp.release.value = .25;
-  master.connect(comp); comp.connect(ctx.destination);
-
-  // a long, dark room made from decaying noise
-  const len = Math.floor(ctx.sampleRate * 3.2);
-  const ir = ctx.createBuffer(2, len, ctx.sampleRate);
-  for (let c = 0; c < 2; c++) {
-    const d = ir.getChannelData(c);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.6);
-  }
-  const verb = ctx.createConvolver(); verb.buffer = ir;
-  const verbIn = ctx.createGain(); verbIn.gain.value = .32;
-  const verbTone = ctx.createBiquadFilter(); verbTone.type = 'lowpass'; verbTone.frequency.value = 3200;
-  verbIn.connect(verbTone); verbTone.connect(verb); verb.connect(master);
-
-  const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-  const nd = noise.getChannelData(0);
-  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-
-  return { master, verbIn, noise };
-}
-
-// every voice ends in: gain envelope -> panner -> dry + reverb send
-function outlet(ctx, g, pan, send){
-  const p = ctx.createStereoPanner(); p.pan.value = clamp(pan || 0, -1, 1);
-  const env = ctx.createGain(); env.gain.value = 0;
-  env.connect(p); p.connect(g.master);
-  const s = ctx.createGain(); s.gain.value = send; p.connect(s); s.connect(g.verbIn);
-  return env;
-}
-function adsr(param, t, dur, peak, a, r){
-  param.setValueAtTime(0, t);
-  param.linearRampToValueAtTime(peak, t + a);
-  param.setValueAtTime(peak, t + Math.max(a, dur));
-  param.exponentialRampToValueAtTime(0.0001, t + Math.max(a, dur) + r);
-  return t + Math.max(a, dur) + r + .05;
-}
-function osc(ctx, type, f, t, end, dest, detune){
-  const o = ctx.createOscillator(); o.type = type; o.frequency.value = f;
-  if (detune) o.detune.value = detune;
-  o.connect(dest); o.start(t); o.stop(end);
-  return o;
-}
-
-const VOICES = {
-  pad(ctx, g, n, t){
-    const env = outlet(ctx, g, n.pan * .5, .55);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = .4;
-    lp.connect(env);
-    const end = adsr(env.gain, t, n.dur, .045 * n.vel, .7, 1.2);
-    osc(ctx, 'sawtooth', m2f(n.midi), t, end, lp, -7);
-    osc(ctx, 'sawtooth', m2f(n.midi), t, end, lp, 7);
-  },
-  bass(ctx, g, n, t){
-    const env = outlet(ctx, g, 0, .08);
-    const end = adsr(env.gain, t, n.dur * .6, .32 * n.vel, .01, .5);
-    osc(ctx, 'sine', m2f(n.midi), t, end, env);
-    const h = ctx.createGain(); h.gain.value = .25; h.connect(env);
-    osc(ctx, 'triangle', m2f(n.midi + 12), t, end, h);
-  },
-  // Cattle Mutilation: a raw, filtered saw pluck
-  cattle(ctx, g, n, t){
-    const env = outlet(ctx, g, n.pan, .3);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 6;
-    lp.frequency.setValueAtTime(900 + n.vel * 3200, t);
-    lp.frequency.exponentialRampToValueAtTime(380, t + n.dur + .2);
-    lp.connect(env);
-    const end = adsr(env.gain, t, n.dur * .5, .13 * n.vel, .005, .35);
-    osc(ctx, 'sawtooth', m2f(n.midi), t, end, lp);
-  },
-  // The Sound of Not the Earth: a struck, bell-like FM tone
-  e(ctx, g, n, t){
-    const env = outlet(ctx, g, n.pan, .45);
-    const end = adsr(env.gain, t, .02, .16 * n.vel, .004, Math.max(.8, n.dur * 1.5));
-    const f = m2f(n.midi);
-    const car = osc(ctx, 'sine', f, t, end, env);
-    const mg = ctx.createGain();
-    mg.gain.setValueAtTime(f * 2.2, t); mg.gain.exponentialRampToValueAtTime(f * .05, t + .9);
-    mg.connect(car.frequency);
-    osc(ctx, 'sine', f * 3.5, t, end, mg);
-  },
-  // Noctiluca: a slow, glassy triangle with an octave shimmer
-  d(ctx, g, n, t){
-    const env = outlet(ctx, g, n.pan, .6);
-    const end = adsr(env.gain, t, n.dur, .12 * n.vel, .09, .9);
-    osc(ctx, 'triangle', m2f(n.midi), t, end, env);
-    const h = ctx.createGain(); h.gain.value = .18; h.connect(env);
-    osc(ctx, 'sine', m2f(n.midi + 12), t, end, h, 4);
-  },
-  // I'm Not an Alien: an 8-bit square
-  imnota(ctx, g, n, t){
-    const env = outlet(ctx, g, n.pan, .2);
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 3600;
-    lp.connect(env);
-    const end = adsr(env.gain, t, n.dur * .8, .06 * n.vel, .003, .08);
-    osc(ctx, 'square', m2f(n.midi), t, end, lp);
-  },
-  // Tenshi no Tsubasa: two soft sines with a slow vibrato, like a voice
-  tenshi(ctx, g, n, t){
-    const env = outlet(ctx, g, n.pan, .7);
-    const end = adsr(env.gain, t, n.dur, .1 * n.vel, .16, 1.1);
-    const f = m2f(n.midi);
-    const a = osc(ctx, 'sine', f, t, end, env, -5);
-    const b = osc(ctx, 'sine', f, t, end, env, 6);
-    const lfo = ctx.createOscillator(); lfo.frequency.value = 5.2;
-    const depth = ctx.createGain(); depth.gain.value = f * .006;
-    lfo.connect(depth); depth.connect(a.frequency); depth.connect(b.frequency);
-    lfo.start(t); lfo.stop(end);
-  },
-};
-
-const DRUMS = {
-  kick(ctx, g, d, t){
-    const env = outlet(ctx, g, d.pan, .05);
-    const end = adsr(env.gain, t, .02, .55 * d.vel, .002, .32);
-    const o = osc(ctx, 'sine', 120, t, end, env);
-    o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(42, t + .28);
-  },
-  tick(ctx, g, d, t){
-    const env = outlet(ctx, g, d.pan, .35);
-    const hp = ctx.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5200;
-    hp.connect(env);
-    const end = adsr(env.gain, t, .005, .16 * d.vel, .001, .06);
-    const s = ctx.createBufferSource(); s.buffer = g.noise; s.connect(hp); s.start(t); s.stop(end);
-  },
-  wash(ctx, g, d, t){
-    const env = outlet(ctx, g, d.pan, .8);
-    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 1.4;
-    bp.frequency.setValueAtTime(300, t); bp.frequency.exponentialRampToValueAtTime(2400, t + 1.4);
-    bp.connect(env);
-    const end = adsr(env.gain, t, .9, .05 * d.vel, .5, .9);
-    const s = ctx.createBufferSource(); s.buffer = g.noise; s.loop = true; s.connect(bp); s.start(t); s.stop(end);
-  },
-};
-
-function schedule(ctx, song, at){
-  const g = buildGraph(ctx);
-  for (const n of song.notes) (VOICES[n.voice] || VOICES.d)(ctx, g, n, at + n.t);
-  for (const d of song.drums) DRUMS[d.kind](ctx, g, d, at + d.t);
-}
-
-/* =====================================================================
-   4. The record: the whole piece as one spiral groove
+   3. The record
    ===================================================================== */
 const canvas = document.getElementById('record');
 const g2 = canvas.getContext('2d');
-const OUTER = .94, INNER = .36;     // groove band, as fractions of the radius
-const NEEDLE = -Math.PI / 4;        // the needle sits at half past one
 let R = 100, dpr = 1;
 
 function resize(){
@@ -549,82 +380,26 @@ function resize(){
 }
 
 function draw(){
-  const ctx = g2, size = canvas.width / dpr;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, size, size);
-  const cx = size / 2, cy = size / 2;
-  const now = playing ? playTime() : -1;
-  const bars = song ? song.bars : 16;
-  const band = (OUTER - INNER) * R / bars;
-  const frac = now >= 0 ? (now / BAR) % 1 : 0;
-  const rot = NEEDLE + 2 * Math.PI * frac + (now < 0 ? idleSpin : 0);
-
-  // disc
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fillStyle = '#0c0c0c'; ctx.fill();
-  ctx.rotate(rot);
-  ctx.lineWidth = 1;
-  for (let b = 0; b <= bars; b++) {
-    ctx.beginPath(); ctx.arc(0, 0, OUTER * R - b * band, 0, Math.PI * 2);
-    ctx.strokeStyle = 'rgba(232,226,212,0.07)'; ctx.stroke();
-  }
-  // sheen
-  ctx.fillStyle = 'rgba(232,226,212,0.035)';
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, -1.9, -1.1); ctx.fill();
-  ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, R, 1.25, 2.05); ctx.fill();
-
-  // notes, laid along the groove
-  if (song) {
-    ctx.lineCap = 'round';
-    for (const n of song.notes) {
-      if (!n.src) continue;
-      const b = Math.floor(n.t / BAR + 1e-6);
-      const s = (n.t - b * BAR) / BAR;
-      const len = Math.min(n.dur / BAR, 1 - s);
-      const r = OUTER * R - b * band - band * (.15 + .7 * (1 - (n.midi - 55) / 33));
-      const a0 = -s * 2 * Math.PI, a1 = -(s + Math.max(len, .012)) * 2 * Math.PI;
-      const played = now >= n.t, sounding = played && now < n.t + n.dur;
-      ctx.beginPath(); ctx.arc(0, 0, r, a1, a0);
-      ctx.strokeStyle = SOURCES[n.src].color;
-      ctx.globalAlpha = sounding ? 1 : played ? .8 : .32;
-      ctx.lineWidth = Math.max(1.2, band * (sounding ? .5 : .28));
-      ctx.stroke();
-    }
-    ctx.globalAlpha = 1;
-  }
-
-  // label
-  ctx.beginPath(); ctx.arc(0, 0, INNER * R * .86, 0, Math.PI * 2); ctx.fillStyle = '#b01d12'; ctx.fill();
-  ctx.fillStyle = '#e8e2d4';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.font = `italic 500 ${Math.round(R * .085)}px "Playfair Display", serif`;
-  ctx.fillText('OUTER', 0, -R * .045);
-  ctx.fillText('CHORD', 0, R * .05);
-  ctx.beginPath(); ctx.arc(0, 0, R * .018, 0, Math.PI * 2); ctx.fillStyle = '#0c0c0c'; ctx.fill();
-  ctx.restore();
-
-  // tonearm: from outside the top-right to the needle's place in the groove
-  const rr = now >= 0 ? OUTER * R - (now / BAR) * band : R * 1.02;
-  const tipX = cx + Math.cos(NEEDLE) * rr, tipY = cy + Math.sin(NEEDLE) * rr;
-  const pivX = cx + R * 1.02, pivY = cy - R * 1.02;
-  ctx.strokeStyle = '#e8e2d4'; ctx.lineWidth = Math.max(2, R * .014); ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(pivX, pivY);
-  ctx.quadraticCurveTo(pivX - R * .05, (pivY + tipY) / 2, tipX, tipY); ctx.stroke();
-  ctx.beginPath(); ctx.arc(pivX, pivY, R * .04, 0, Math.PI * 2); ctx.fillStyle = '#e8e2d4'; ctx.fill();
-  ctx.beginPath(); ctx.arc(tipX, tipY, R * .016, 0, Math.PI * 2); ctx.fillStyle = '#b01d12'; ctx.fill();
+  const size = canvas.width / dpr;
+  g2.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g2.clearRect(0, 0, size, size);
+  // the arm reaches in from outside the disc, so the disc sits a touch in
+  OC.drawRecord(g2, size / 2, size / 2, R, song, player && player.playing ? player.time() : -1,
+                { spin: idleSpin, tonearm: true, restAlpha: .32 });
 }
 
 /* =====================================================================
-   5. Page
+   4. Page
    ===================================================================== */
 const $ = id => document.getElementById(id);
-const playBtn = $('playBtn'), remakeBtn = $('remakeBtn'), saveBtn = $('saveBtn');
-let events = [], song = null, seed = 1;
-let ac = null, startAt = 0, playing = false, idleSpin = 0;
+const playBtn = $('playBtn'), remakeBtn = $('remakeBtn'), saveBtn = $('saveBtn'),
+      qrBtn = $('qrBtn'), archiveBtn = $('archiveBtn');
+let events = [], compact = null, song = null, code = '', seed = 1, player = null, idleSpin = 0;
+let sourceInfo = {};
 
-const playTime = () => ac ? ac.currentTime - startAt : 0;
-const fmt = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+// one archive entry per visit to this page: remaking replaces it
+const visitId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+const createdAt = new Date().toISOString();
 
 function showMessage(text){ const m = $('message'); m.textContent = text; m.hidden = !text; }
 
@@ -640,46 +415,50 @@ function renderStats(info){
   const froms = [...new Set(Object.values(info).map(i => i.from))];
   const where = froms.includes('server') ? '전시 서버 기록' : '이 브라우저 기록';
   $('stats').innerHTML = `소리 ${events.length.toLocaleString()}개 · 체험 ${sessions}회<br>` +
-    (song ? `${song.bars}마디 · ${BPM} BPM · ${fmt(song.length)}` : '') + `<br>${where}`;
+    (song ? `${song.bars}마디 · ${BPM} BPM · ${OC.fmt(song.length)}` : '') + `<br>${where}`;
 }
 
 function setNow(){
   if (!song) return;
-  const t = playing ? playTime() : 0;
+  const t = player && player.playing ? player.time() : 0;
   const b = clamp(Math.floor(t / BAR), 0, song.bars - 1);
-  $('chordName').textContent = playing ? song.barInfo[b].chord.map(pc => NAMES[pc]).join(' · ') : song.barInfo[0].chord.map(pc => NAMES[pc]).join(' · ');
+  $('chordName').textContent = OC.chordName(song.barInfo[b].chord);
   $('barCount').textContent = `${String(b + 1).padStart(2, '0')} / ${String(song.bars).padStart(2, '0')}`;
 }
 
-function make(){
-  song = compose(events, seed);
-  setNow();
-  draw();
+function fileName(){
+  return `outer-chord-${createdAt.slice(0, 16).replace(/[:T-]/g, '')}.wav`;
 }
 
-async function play(){
-  stop();
-  const AC = window.AudioContext || window.webkitAudioContext;
-  ac = new AC();
-  startAt = ac.currentTime + .15;
-  schedule(ac, song, startAt);
-  playing = true;
-  playBtn.textContent = '■ 정지';
-}
-function stop(){
-  if (ac) { try { ac.close(); } catch (_) {} ac = null; }
-  playing = false;
-  playBtn.textContent = '▶ 재생';
+async function make(){
+  compact = compose(events, seed);
+  song = OC.expand(compact);
+  if (player) player.stop();
+  player = OC.player(song, () => { playBtn.textContent = '▶ 재생'; });
   setNow();
   draw();
+  code = await OC.encode(compact);
+  // keep it in the archive (this visit's entry; a remake overwrites it)
+  const counts = {};
+  for (const k of ORDER) counts[k] = sourceInfo[k] ? sourceInfo[k].count : 0;
+  OC.saveSong({
+    id: visitId, createdAt, code,
+    bars: song.bars, length: +song.length.toFixed(2),
+    chord: OC.chordName(song.barInfo[0].chord),
+    counts, sounds: events.length,
+    sessions: new Set(events.map(e => e.src + ':' + e.sess)).size,
+  });
 }
 
-playBtn.addEventListener('click', () => (playing ? stop() : play()));
-remakeBtn.addEventListener('click', () => {
-  const was = playing;
+function play(){ player.play(); playBtn.textContent = '■ 정지'; }
+function stop(){ if (player) player.stop(); playBtn.textContent = '▶ 재생'; setNow(); draw(); }
+
+playBtn.addEventListener('click', () => (player.playing ? stop() : play()));
+remakeBtn.addEventListener('click', async () => {
+  const was = player && player.playing;
   stop();
   seed = (Math.random() * 2 ** 31) | 0;
-  make();
+  await make();
   if (was) play();
 });
 
@@ -689,16 +468,7 @@ saveBtn.addEventListener('click', async () => {
   const label = saveBtn.textContent;
   saveBtn.textContent = '만드는 중…';
   try {
-    const rate = 44100;
-    const off = new OfflineAudioContext(2, Math.ceil((song.length + song.tail) * rate), rate);
-    schedule(off, song, 0);
-    const buf = await off.startRendering();
-    const blob = toWav(buf);
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `outer-chord-${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '')}.wav`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    OC.download(await OC.renderWav(song), fileName());
   } catch (err) {
     showMessage('파일을 만들지 못했습니다: ' + err.message);
     setTimeout(() => showMessage(''), 3000);
@@ -707,22 +477,13 @@ saveBtn.addEventListener('click', async () => {
   saveBtn.disabled = false;
 });
 
-function toWav(buf){
-  const ch = buf.numberOfChannels, len = buf.length, rate = buf.sampleRate;
-  const data = new DataView(new ArrayBuffer(44 + len * ch * 2));
-  const str = (o, s) => { for (let i = 0; i < s.length; i++) data.setUint8(o + i, s.charCodeAt(i)); };
-  str(0, 'RIFF'); data.setUint32(4, 36 + len * ch * 2, true); str(8, 'WAVE');
-  str(12, 'fmt '); data.setUint32(16, 16, true); data.setUint16(20, 1, true); data.setUint16(22, ch, true);
-  data.setUint32(24, rate, true); data.setUint32(28, rate * ch * 2, true); data.setUint16(32, ch * 2, true); data.setUint16(34, 16, true);
-  str(36, 'data'); data.setUint32(40, len * ch * 2, true);
-  const chans = []; for (let c = 0; c < ch; c++) chans.push(buf.getChannelData(c));
-  let o = 44;
-  for (let i = 0; i < len; i++) for (let c = 0; c < ch; c++) {
-    const s = clamp(chans[c][i], -1, 1);
-    data.setInt16(o, s < 0 ? s * 0x8000 : s * 0x7fff, true); o += 2;
-  }
-  return new Blob([data], { type: 'audio/wav' });
-}
+// the song, packed into a code, rides in a QR code to the visitor's phone
+qrBtn.addEventListener('click', () => {
+  if (!code) return;
+  try { OC.showQR(code, { title: `${OC.chordName(song.barInfo[0].chord)} — ${OC.fmt(song.length)}` }); }
+  catch (err) { showMessage('QR 코드를 만들지 못했습니다: ' + err.message); setTimeout(() => showMessage(''), 3000); }
+});
+archiveBtn.addEventListener('click', () => { location.href = '../records/index.html'; });
 
 /* The record turns on the same kind of hand-cranked clock as the index:
    frames held for a slightly different time each, around 24 a second. */
@@ -730,8 +491,7 @@ let nextFrame = 0;
 function loop(ts){
   if (ts >= nextFrame) {
     nextFrame = ts + (1000 / 24) * (1 + (Math.random() * 2 - 1) * .15);
-    if (!playing) idleSpin += .012;
-    if (playing && playTime() > song.length + song.tail) stop();
+    if (!(player && player.playing)) idleSpin += .012;
     setNow();
     draw();
   }
@@ -745,7 +505,8 @@ requestAnimationFrame(loop);
 /* Once the song is made the archive has done its job: everything collected
    is cleared so the index starts over from nothing — no record at the
    bottom, no sounds waiting — for the next person. The song itself stays in
-   this page, so it can still be played, remade and saved from here.
+   this page, so it can still be played, remade and saved from here, and it
+   is kept in the song archive (records/).
    On the server nothing is lost: the files move to archive/<time>/. */
 const LOCAL_KEYS = [
   'cattle-mutilation-sound-pending-v1',
@@ -770,18 +531,20 @@ async function resetAll(){
 (async () => {
   const { events: evs, info } = await collect();
   events = evs;
+  sourceInfo = info;
   renderLegend(info);
   if (!events.length) {
     await resetAll();
     renderStats(info);
     showMessage('아직 모인 소리가 없습니다.\n작품을 체험한 뒤 다시 와 주세요.');
     $('message').style.whiteSpace = 'pre-line';
+    archiveBtn.disabled = false;
     return;
   }
   seed = (Math.random() * 2 ** 31) | 0;
-  make();
+  await make();
   renderStats(info);
-  [playBtn, remakeBtn, saveBtn].forEach(b => (b.disabled = false));
+  [playBtn, remakeBtn, saveBtn, qrBtn, archiveBtn].forEach(b => (b.disabled = false));
   await resetAll();
   $('stats').insertAdjacentHTML('beforeend', '<br>이 곡을 만든 소리는 비워졌습니다');
 })();
