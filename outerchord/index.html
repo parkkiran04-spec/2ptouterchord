@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OUTERCHORD</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<div class="scene" id="scene">
+
+  <!-- base dark background: stays put, never tilts or drifts -->
+  <div class="backdrop"></div>
+
+  <!-- everything below tilts together as one 3D plane (JS sets rotateX/Y on #world) -->
+  <div class="world" id="world">
+
+    <div class="parallax" style="--depth:0.35">
+      <div class="dust-safety">
+        <div class="layer-img reveal dust"></div>
+      </div>
+    </div>
+
+    <!-- beam: no translate parallax — hinged at its apex, swings with the pointer -->
+    <div class="beam-rig" id="beamRig">
+      <div class="fix-beam">
+        <div class="layer-img beam"></div>
+      </div>
+    </div>
+
+    <!-- the "bubble" (biomorphic cell/foam linework): opens outward from
+         the centre on load, then trembles very slightly forever after —
+         JS adds a tiny random jitter to biomorphic-rig every frame -->
+    <div class="parallax" style="--depth:0.8">
+      <div class="biomorphic-rig" id="biomorphicRig">
+        <div class="layer-img biomorphic"></div>
+      </div>
+    </div>
+
+    <div class="parallax" style="--depth:1.3">
+      <div class="ring-rig" id="ringRig">
+        <div class="layer-img reveal ring"></div>
+      </div>
+    </div>
+
+    <div class="parallax" style="--depth:1.6">
+      <div class="glyphs-rig" id="glyphsRig">
+        <div class="layer-img reveal glyphs blink"></div>
+      </div>
+    </div>
+
+    <div class="parallax" style="--depth:2.4">
+      <div class="astronaut-rig" id="astronautRig">
+        <div class="fix-astronaut">
+          <div class="layer-img reveal-smooth astronaut float"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- decorative texture band, not part of the reference composite, used as a quiet looping motif -->
+    <div class="astro-row-wrap">
+      <div class="astro-row-track">
+        <div class="layer-img astro-row"></div>
+        <div class="layer-img astro-row"></div>
+      </div>
+    </div>
+
+    <!-- synthetic stars: one animated point per star/dot/bubble actually
+         present in the dust artwork (see stars-data.js), each blinking and
+         drifting in Z on its own schedule -->
+    <div class="sparkles" id="sparkles"></div>
+
+  </div>
+
+  <div class="vignette"></div>
+
+  <header class="hud" style="padding-left:calc(clamp(16px, 2.2vw, 44px) + clamp(36px, 3.1vw, 60px) + 14px)">
+    <span class="hud-mark">OUTERCHORD</span>
+  </header>
+
+</div>
+
+<script src="stars-data.js"></script>
+<script src="script.js"></script>
+<script src="../shared/back.js" data-color="#e8e2d4"></script>
+</body>
+</html>
