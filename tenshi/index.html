@@ -139,24 +139,123 @@ function loadAll() {
   })));
 }
 
+/* Most layers are 90–99% empty, yet a full-screen draw blends every one of
+   those transparent pixels, 13 layers deep, every frame. Each layer is
+   measured once and cut into the boxes that actually hold pixels; a frame
+   draws only those (blit). Cuts run only through fully transparent gaps and
+   keep CUT_PAD px of empty margin, so edge filtering sees the same
+   transparent neighbours and the picture is unchanged. Until a layer is
+   measured — or where cutting would not pay — it is drawn whole as before. */
+const pieces = {};                       // key → [{sx, sy, sw, sh, bm}] in picture px
+const CUT_GAP = 32, CUT_PAD = 8, CUT_MIN = .85, CUT_MAX = 48;
+const NO_CUT = { background: 1, tenshitext2: 1 };   // opaque / drawn column by column
+function runsOf(occ, gap) {
+  const out = [];
+  let a = -1, last = -1;
+  for (let i = 0; i < occ.length; i++) {
+    if (!occ[i]) continue;
+    if (a < 0) a = i;
+    else if (i - last > gap) { out.push([a, last]); a = i; }
+    last = i;
+  }
+  if (a >= 0) out.push([a, last]);
+  return out;
+}
+function measure(im) {
+  const w = im.naturalWidth, h = im.naturalHeight;
+  const m = document.createElement('canvas'); m.width = w; m.height = h;
+  const g = m.getContext('2d', { willReadFrequently: true });
+  g.drawImage(im, 0, 0);
+  let A;
+  try { A = g.getImageData(0, 0, w, h).data; } catch (_) { return null; }   // file:// taints the canvas
+  m.width = m.height = 0;
+  // alternate column / row cuts inside each box until nothing splits further
+  const boxes = [];
+  // prevTight: the other axis already failed to split this box
+  (function cut(x0, x1, y0, y1, byCol, prevTight) {
+    const n = byCol ? x1 - x0 + 1 : y1 - y0 + 1, occ = new Uint8Array(n);
+    for (let y = y0; y <= y1; y++) {
+      const row = y * w;
+      for (let x = x0; x <= x1; x++) if (A[(row + x) * 4 + 3]) occ[byCol ? x - x0 : y - y0] = 1;
+    }
+    const runs = runsOf(occ, CUT_GAP);
+    if (!runs.length) return;
+    const o = byCol ? x0 : y0;
+    const tight = runs.length === 1 && runs[0][0] === 0 && runs[0][1] === n - 1;
+    if (tight) {
+      if (prevTight) boxes.push([x0, x1, y0, y1]);      // neither axis splits: a finished piece
+      else cut(x0, x1, y0, y1, !byCol, true);
+      return;
+    }
+    for (const [a, b] of runs) {                         // every split shrinks the box, so this ends
+      if (byCol) cut(o + a, o + b, y0, y1, false, false);
+      else cut(x0, x1, o + a, o + b, true, false);
+    }
+  })(0, w - 1, 0, h - 1, true, false);
+  let area = 0;
+  const ps = boxes.map(([x0, x1, y0, y1]) => {
+    const sx = Math.max(0, x0 - CUT_PAD), sy = Math.max(0, y0 - CUT_PAD);
+    const p = { sx, sy, sw: Math.min(w, x1 + 1 + CUT_PAD) - sx, sh: Math.min(h, y1 + 1 + CUT_PAD) - sy, bm: null };
+    area += p.sw * p.sh;
+    return p;
+  });
+  // barely empty, or so scattered that the calls cost more than the pixels: draw it whole
+  return area > w * h * CUT_MIN || ps.length > CUT_MAX ? null : ps;
+}
+async function measureAll() {
+  for (const key of Object.keys(src)) {
+    if (NO_CUT[key.slice(0, -3)] || !src[key].naturalWidth) continue;
+    const ps = measure(src[key]);
+    if (ps) pieces[key] = ps;
+    await new Promise(r => setTimeout(r));   // one layer per task, so frames keep coming
+  }
+  buildBitmaps(true);
+}
+// draws a layer at (x, y) in artwork space — the same as drawImage(img, x, y, IW, IH)
+function blit(c, key, x = 0, y = 0) {
+  const ps = pieces[key];
+  if (!ps || !ps.ready) { c.drawImage(imgs[key], x, y, IW, IH); return; }
+  for (const p of ps) c.drawImage(p.bm, x + p.d[0], y + p.d[1], p.d[2], p.d[3]);
+}
+
 let bitmapW = 0, bitmapJob = 0;
-function buildBitmaps() {
+function buildBitmaps(force) {
   if (!window.createImageBitmap || !Object.keys(src).length) return;
   const w = Math.min(IW, Math.round(IW * k)), h = Math.round(w * IH / IW);
-  if (Math.abs(w - bitmapW) < 8) return;
+  if (!force && Math.abs(w - bitmapW) < 8) return;
   const job = ++bitmapJob;
+  const ax = IW / w, ay = IH / h;                // artwork units per bitmap px
   Promise.all(Object.keys(src).map(key => {
     const im = src[key];
-    if (!im.naturalWidth) return Promise.resolve([key, null]);
-    return createImageBitmap(im, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
-      .then(bm => [key, bm], () => [key, null]);
+    if (!im.naturalWidth) return null;
+    return createImageBitmap(im, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' }).then(bm => {
+      const ps = pieces[key];
+      if (!ps) return { key, bm };
+      // the pieces are cut out of the resized layer on whole pixels, so they
+      // hold exactly the pixels the whole layer would have drawn
+      const bx = w / im.naturalWidth, by = h / im.naturalHeight;
+      return Promise.all(ps.map(p => {
+        const x0 = Math.max(0, Math.floor(p.sx * bx) - 2), y0 = Math.max(0, Math.floor(p.sy * by) - 2);
+        const x1 = Math.min(w, Math.ceil((p.sx + p.sw) * bx) + 2), y1 = Math.min(h, Math.ceil((p.sy + p.sh) * by) + 2);
+        return createImageBitmap(bm, x0, y0, x1 - x0, y1 - y0)
+          .then(pb => ({ pb, d: [x0 * ax, y0 * ay, (x1 - x0) * ax, (y1 - y0) * ay] }));
+      })).then(cuts => { bm.close(); return { key, cuts }; }, () => ({ key, bm }));
+    }, () => null);
   })).then(list => {
-    if (job !== bitmapJob) { list.forEach(([, bm]) => bm && bm.close && bm.close()); return; }   // a newer size won
-    for (const [key, bm] of list) {
-      if (!bm) continue;
-      const old = imgs[key];
-      imgs[key] = bm;
-      if (old !== src[key] && old.close) old.close();
+    if (job !== bitmapJob) {                     // a newer size won
+      list.forEach(r => { if (!r) return; if (r.bm) r.bm.close(); if (r.cuts) r.cuts.forEach(q => q.pb.close()); });
+      return;
+    }
+    for (const r of list) {
+      if (!r) continue;
+      const old = imgs[r.key];
+      if (r.cuts) {
+        const ps = pieces[r.key];
+        ps.forEach((p, i) => { if (p.bm) p.bm.close(); p.bm = r.cuts[i].pb; p.d = r.cuts[i].d; });
+        ps.ready = true;
+        imgs[r.key] = src[r.key];                // the whole-size copy is no longer drawn
+      } else imgs[r.key] = r.bm;
+      if (old !== src[r.key] && old !== imgs[r.key] && old.close) old.close();
     }
     bitmapW = w;
   });
@@ -253,7 +352,7 @@ let boilSeed = 0, boilT = 0, mosaicOff = [0, 0], mosaicT = 0;
 const rnd = (s) => { const x = Math.sin(s * 127.1) * 43758.5453; return x - Math.floor(x); };
 
 function drawLayer(c, L, v, xr) {
-  const img = imgs[L.n + '-' + v];
+  const key = L.n + '-' + v, img = imgs[key];
   if (!img || !img.width || img.naturalWidth === 0) return;   // an Image still loading, or a broken one
   c.save();
   c.translate(-par.x * L.depth * PAR, -par.y * L.depth * PAR);
@@ -261,45 +360,45 @@ function drawLayer(c, L, v, xr) {
     case 'drip': drawDrip(c, img, xr); c.restore(); return;
     case 'twinkle':
       c.globalAlpha = .78 + .22 * Math.sin(now * 1.7);
-      c.drawImage(img, 0, 0, IW, IH);
+      blit(c, key);
       if (Q.twinkle) {
         c.globalAlpha = .25 + .25 * Math.sin(now * 2.3 + 1);
-        c.drawImage(img, 1.5, -1.5, IW, IH);
+        blit(c, key, 1.5, -1.5);
       }
       break;
     case 'sway':
       c.translate(0, Math.sin(now * .5) * 8);
-      c.drawImage(img, 0, 0, IW, IH); break;
+      blit(c, key); break;
     case 'wobble': {
       const s = 1 + .008 * Math.sin(now * .8);
       c.translate(1200, 900); c.rotate(Math.sin(now * .33) * .004); c.scale(s, 1 + .012 * Math.sin(now * .8 + 1));
       c.translate(-1200, -900 + Math.sin(now * .6) * 6);
-      c.drawImage(img, 0, 0, IW, IH); break;
+      blit(c, key); break;
     }
     case 'shiver':
       c.translate(Math.sin(now * 13) * .8 + (glitch > .2 ? (Math.random() - .5) * 14 * glitch : 0), 0);
-      c.drawImage(img, 0, 0, IW, IH); break;
+      blit(c, key); break;
     case 'breathe': {
       const s = 1 + .01 * Math.sin(now * .45);
       c.translate(1500, 400); c.scale(s, s); c.rotate(Math.sin(now * .3) * .006); c.translate(-1500, -400);
-      c.drawImage(img, 0, 0, IW, IH); break;
+      blit(c, key); break;
     }
     case 'boil': {
       const a = rnd(boilSeed + L.depth * 10) - .5, b = rnd(boilSeed * 1.3 + L.depth) - .5;
       c.translate(a * 3, b * 3);
-      c.drawImage(img, 0, 0, IW, IH); break;
+      blit(c, key); break;
     }
     case 'mosaic':
       c.translate(mosaicOff[0], mosaicOff[1]);
-      c.drawImage(img, 0, 0, IW, IH); break;
+      blit(c, key); break;
     case 'textbox': {
       const p = easeOut(Math.min(1, Math.max(0, (now - 0.6) / 1.8)));
       c.beginPath(); c.rect(0, 0, 330 + 520 * p, IH); c.clip();
       if (textboxFlick > 0 && Math.random() < .5) c.translate((Math.random() - .5) * 10, 0);
-      c.drawImage(img, 0, 0, IW, IH); break;
+      blit(c, key); break;
     }
     default:
-      c.drawImage(img, 0, 0, IW, IH);
+      blit(c, key);
   }
   c.restore();
 }
@@ -975,6 +1074,7 @@ loadAll().then(() => {
   for (let i = 0; i < 6; i++) spawnDrip(Math.random() * IW, .8);
   touchHint();
   requestAnimationFrame(frame);
+  measureAll();                          // in the background; layers switch to pieces as they finish
 });
 })();
 </script>
