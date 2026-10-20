@@ -4,133 +4,251 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>I'm Not an Alien</title>
-<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<!-- Cascadia Mono (UI / body text) -->
+<link href="https://fonts.googleapis.com/css2?family=Cascadia+Mono:wght@300;400;600&family=Archivo:ital,wdth,wght@0,125,300;0,125,800;1,125,300;1,125,800&display=swap" rel="stylesheet">
+<!-- Owners XXWide is an Adobe Fonts typeface: paste your Adobe Fonts web-project <link> here, e.g.
+     <link rel="stylesheet" href="https://use.typekit.net/XXXXXXX.css">
+     If Owners XXWide is installed on this computer it is picked up automatically (local()). Archivo Expanded is the fallback. -->
 <style>
+  @font-face { font-family: "Glitch Goblin"; src: local("Glitch Goblin"), url("assets/fonts/GlitchGoblin.ttf") format("truetype"); font-display: swap; }
+  @font-face { font-family: "Owners XXWide Local"; font-weight: 700; src: local("Owners XXWide Bold"), local("OwnersXXWide-Bold"), local("Owners XXWide"); }
+  @font-face { font-family: "Owners XXWide Local"; font-weight: 300; font-style: italic; src: local("Owners XXWide Light Italic"), local("OwnersXXWide-LightItalic"), local("Owners XXWide Italic"), local("Owners XXWide"); }
+
   :root {
-    --ink: #5fa0e6;   /* color 1 */
-    --paper: #ffffff; /* color 2 */
+    /* palette sampled from the design files */
+    --ink: #2c2626;     /* window frame, panels, dots */
+    --lav: #cbbee9;     /* lavender (gradient start, dark-panel text) */
+    --lav-end: #b2a4dd; /* lavender (gradient end) */
+    --hi: #e5e1ff;      /* bevel highlight */
+    --btn-hi: #d6ccff;  /* title-button top bevel */
+    --btn-lo: #a792e8;  /* title-button bottom bevel */
+    --muted: #6e6480;   /* error code text */
+    --grad: linear-gradient(90deg, var(--lav), var(--lav-end));
+
+    --f-mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+    --f-glitch: "Glitch Goblin", "Cascadia Mono", monospace;
+    --f-wide: "Owners XXWide", "Owners XXWide Local", "Owners", "Archivo", sans-serif;
+
+    /* aliases used by older inline styles */
+    --paper: var(--lav);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { width: 100%; min-height: 100%; overflow-x: hidden; background: var(--paper); }
-  body { padding-bottom: 60px; }
-  body { font-family: "Share Tech Mono", monospace; color: var(--ink); font-size: 13px; }
+  html, body { width: 100%; min-height: 100%; overflow-x: hidden; background: var(--lav); }
+  body { padding-bottom: 60px; font-family: var(--f-mono); color: var(--ink); font-size: 16px; }
   button, input { font: inherit; color: inherit; }
   canvas.px { image-rendering: pixelated; image-rendering: crisp-edges; display: block; }
+  .glitch-t { font-family: var(--f-glitch); text-transform: uppercase; font-weight: normal; }
+  .wide { font-family: var(--f-wide); font-stretch: 125%; }
 
   #bg { position: fixed; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; display: block; }
 
-  /* header */
-  .hdr {
-    position: absolute; top: 14px; left: 50%; transform: translateX(-50%); z-index: 4;
-    background: var(--paper); border: 2px solid var(--ink); padding: 4px 14px 5px; text-align: center; white-space: nowrap;
+  /* ---------- bevels (from the design) ---------- */
+  /* sunken: dark top/left, light bottom/right, 2px dark rim  -> input field, play areas, YES/NO buttons */
+  .inset {
+    border-style: solid; border-width: 9px 7px 7px 9px;
+    border-color: var(--ink) var(--hi) var(--hi) var(--ink);
+    box-shadow: 2px 2px 0 var(--ink);
   }
-  .hdr h1 { font-size: 18px; font-weight: normal; letter-spacing: 1px; display: flex; align-items: center; gap: 8px; justify-content: center; }
-  .hdr h1 canvas { width: 20px; height: 20px; }
-  .hdr small { font-size: 11px; opacity: .85; }
+  /* raised: light top, darker bottom -> title-bar buttons, keys */
+  .raised {
+    border-style: solid; border-width: 4px 4px 5px;
+    border-color: var(--btn-hi) var(--lav) var(--btn-lo);
+    background: var(--lav); box-shadow: 0 0 0 1px #8d84a1;
+  }
 
-  /* window */
-  .win {
-    position: absolute; left: 50%; top: 92px; transform: translateX(-50%);
-    width: min(400px, calc(100vw - 32px));
-    background: var(--paper); border: 2px solid var(--ink); z-index: 3;
+  /* ---------- header chips ---------- */
+  .hdr {
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%); z-index: 4;
+    display: flex; align-items: stretch; white-space: nowrap;
   }
+  .hdr h1 {
+    background: var(--lav); color: var(--ink); font-size: 24px; line-height: 1; padding: 6px 14px 6px 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .hdr h1 canvas { width: 26px; height: 26px; }
+  .hdr small { background: var(--ink); color: var(--lav); font-size: 18px; display: flex; align-items: center; padding: 0 14px; }
+
+  /* ---------- window ---------- */
+  .win {
+    position: absolute; left: 50%; top: 84px; transform: translateX(-50%);
+    width: min(756px, calc(100vw - 32px));
+    background: var(--grad); border: 5px solid var(--ink); border-top: 0; z-index: 3;
+  }
+  /* desktop: shrink the whole window uniformly (design 756px -> ~578px), keeping every proportion */
   .win.shake { animation: shake .35s steps(2) 1; }
   @keyframes shake { 0%{margin-left:-8px} 25%{margin-left:8px} 50%{margin-left:-6px} 75%{margin-left:6px} 100%{margin-left:0} }
   .title {
-    background: var(--ink); color: var(--paper);
+    background: var(--ink); color: var(--lav);
     display: flex; justify-content: space-between; align-items: center;
-    padding: 4px 6px 4px 8px; font-size: 13px; letter-spacing: 1px; user-select: none;
+    height: 35px; padding: 0 6px 0 16px; margin: 0 -5px; font-size: 16px; letter-spacing: .5px; user-select: none;
   }
-  .btns { display: flex; gap: 4px; }
-  .btns b { width: 16px; height: 16px; border: 1px solid var(--paper); font-size: 11px; font-weight: normal; display: grid; place-items: center; line-height: 1; }
-  .menu { display: flex; gap: 12px; padding: 3px 6px; font-size: 12px; border-bottom: 1px solid var(--ink); }
-  .body { padding: 12px; min-height: 120px; position: relative; }
-  .status { display: flex; justify-content: space-between; gap: 10px; border-top: 1px solid var(--ink); padding: 2px 8px; font-size: 10px; }
-  .status #msg { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .status.err { background: var(--ink); color: var(--paper); }
+  .btns { display: flex; gap: 9px; }
+  .btns b {
+    width: 22px; height: 17px; position: relative; display: block; cursor: default;
+    border-style: solid; border-width: 4px 4px 5px; border-color: var(--btn-hi) var(--lav) var(--btn-lo);
+    background: var(--lav); box-shadow: 0 0 0 1px #8d84a1;
+  }
+  .btns b::before, .btns b::after { content: ""; position: absolute; }
+  .btns b.min::before { left: 2px; right: 2px; bottom: 1px; height: 2px; background: var(--ink); }
+  .btns b.max::before { left: 2px; right: 2px; top: 0; bottom: 0; border: 2px solid var(--ink); }
+  .btns b.x::before, .btns b.x::after { left: 1px; right: 1px; top: 50%; height: 2px; margin-top: -1px; background: var(--ink); }
+  .btns b.x::before { transform: rotate(22deg); }
+  .btns b.x::after  { transform: rotate(-22deg); }
+  .btns b:active { border-color: var(--btn-lo) var(--lav) var(--btn-hi); }
 
-  /* recaptcha-ish prompt bar */
-  .prompt { background: var(--ink); color: var(--paper); padding: 10px 12px 12px; margin-bottom: 10px; }
-  .prompt small { font-size: 12px; display: block; }
-  .prompt big { font-size: 22px; display: block; line-height: 1.2; letter-spacing: .5px; }
+  .menu { display: flex; gap: 24px; padding: 0 15px; height: 24.5px; align-items: center; font-size: 16px; border-bottom: 1px solid var(--ink); }
+  .body { padding: 24px 23px 30px; min-height: 160px; position: relative; }
+  .status {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    border-top: 1px solid var(--ink); height: 25px; padding: 0 15px;
+    font-family: var(--f-wide); font-stretch: 125%; font-weight: 700; font-size: 15px; letter-spacing: -.2px;
+  }
+  .status #msg { flex: 1; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 300; font-style: italic; font-size: 14px; }
+  .status.err { background: var(--ink); color: var(--lav); }
 
-  .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+  /* ---------- dark prompt panel (alienCAPCHA) ---------- */
+  .prompt {
+    position: relative; background: var(--ink); color: var(--lav); min-height: 137px;
+    padding: 24px 150px 22px 35px; margin-bottom: 21px;
+    display: flex; flex-direction: column; justify-content: center;
+  }
+  .prompt small { font-family: var(--f-glitch); text-transform: uppercase; font-size: 21px; line-height: 1.1; display: block; }
+  .prompt big { font-family: var(--f-glitch); text-transform: uppercase; font-size: 46px; line-height: 1; display: block; margin-top: 2px; }
+  .plogo {
+    position: absolute; right: 30px; top: 50%; transform: translateY(-50%); width: 104px;
+    display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 14px; color: var(--lav);
+  }
+  .plogo canvas { width: 46px; height: 46px; }
+  .star { position: absolute; width: 3px; height: 3px; background: var(--lav); pointer-events: none; }
+  .star.p {
+    width: 9px; height: 9px; background:
+      linear-gradient(var(--lav), var(--lav)) center / 3px 100% no-repeat,
+      linear-gradient(var(--lav), var(--lav)) center / 100% 3px no-repeat;
+  }
+
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 21px; }
   .btn {
-    background: var(--ink); color: var(--paper); border: 2px solid var(--ink); padding: 5px 16px; cursor: pointer; letter-spacing: 1px;
+    background: var(--ink); color: var(--lav); border: 0; min-height: 49px; padding: 0 22px; cursor: pointer;
+    font-family: var(--f-glitch); text-transform: uppercase; font-size: 27px; line-height: 1; flex: none;
   }
-  .btn:hover { background: var(--paper); color: var(--ink); }
-  .btn.ghost { background: var(--paper); color: var(--ink); }
-  .btn.ghost:hover { background: var(--ink); color: var(--paper); }
-  .field { width: 100%; border: 2px solid var(--ink); padding: 6px 8px; background: var(--paper); outline: none; font-size: 16px; letter-spacing: 1px; }
-  .field:focus { box-shadow: 3px 3px 0 var(--ink); }
+  .btn:hover { color: var(--hi); }
+  .btn:active { translate: 1px 1px; }
+  .btn.lg { min-height: 63px; padding: 0 26px; font-size: 32px; }
+  .btn.ghost { background: transparent; color: var(--ink); }
+  .btn.ghost:hover { color: #000; }
+  /* bevelled buttons (YES / NO in the design) */
+  .btn.bev { min-height: 45px; padding: 0 20px; font-size: 22px;
+    border-style: solid; border-width: 7px 6px 6px 7px; border-color: var(--ink) var(--hi) var(--hi) var(--ink); box-shadow: 2px 2px 0 var(--ink); }
+  .btn.bev:active { border-color: var(--hi) var(--ink) var(--ink) var(--hi); }
 
-  /* checkbox widget */
+  .field {
+    width: 100%; height: 49px; padding: 0 12px; outline: none; font-family: var(--f-mono); font-size: 20px; letter-spacing: 1px;
+    background: transparent; color: var(--ink);
+    border-style: solid; border-width: 9px 7px 7px 9px; border-color: var(--ink) var(--hi) var(--hi) var(--ink);
+    box-shadow: 2px 2px 0 var(--ink); border-radius: 0; appearance: none; -moz-appearance: textfield;
+  }
+  .field::placeholder { color: var(--ink); opacity: .45; }
+  .field::-webkit-outer-spin-button, .field::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .field:focus { background: rgba(229, 225, 255, .35); }
+  .row .field + .btn { margin-left: 0; }
+
+  /* ---------- checkbox widget (level 1) ---------- */
   .cbox {
-    display: flex; align-items: center; gap: 14px; border: 2px solid var(--ink); padding: 14px 16px; background: var(--paper);
-    user-select: none;
+    position: relative; display: flex; align-items: center; gap: 40px; background: var(--ink); color: var(--lav);
+    min-height: 137px; padding: 0 150px 0 43px; user-select: none;
   }
-  .cbox .sq { width: 26px; height: 26px; border: 2px solid var(--ink); cursor: pointer; display: grid; place-items: center; font-size: 20px; flex: none; }
-  .cbox .sq:hover { box-shadow: inset 0 0 0 2px var(--paper), inset 0 0 0 10px var(--ink); }
+  .cbox .sq { width: 33px; height: 33px; border: 2px solid var(--lav); cursor: pointer; display: grid; place-items: center; font-size: 24px; flex: none; color: var(--lav); }
+  .cbox .sq:hover { box-shadow: inset 0 0 0 3px var(--ink), inset 0 0 0 20px var(--lav); }
   .cbox .sq.on:hover { box-shadow: none; }
-  .cbox .lbl { flex: 1; font-size: 15px; }
-  .cbox .logo { font-size: 9px; text-align: center; line-height: 1.2; }
-  .cbox .logo canvas { width: 28px; height: 28px; margin: 0 auto 2px; }
-  .spin { width: 20px; height: 20px; border: 3px dotted var(--ink); border-radius: 50%; animation: spin 1s steps(8) infinite; }
+  .cbox .lbl { flex: 1; font-family: var(--f-glitch); text-transform: uppercase; font-size: 31px; line-height: 1; }
+  .spin { width: 22px; height: 22px; border: 3px dotted var(--lav); border-radius: 50%; animation: spin 1s steps(8) infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  /* small checkbox carried by the UFO (level 11) */
+  .cbox.mini { min-height: 0; padding: 7px 12px; gap: 10px; }
+  .cbox.mini .lbl { font-size: 17px; flex: none; }
 
-  /* tile grid */
-  .grid { display: grid; gap: 3px; position: relative; }
-  .tile { position: relative; cursor: pointer; border: 0; background: var(--paper); padding: 0; overflow: hidden; }
+  /* ---------- tile grids ---------- */
+  .grid { display: grid; gap: 12px; position: relative; }
+  .tile { position: relative; cursor: pointer; border: 0; background: transparent; padding: 0; overflow: hidden; }
   .tile canvas { width: 100%; height: 100%; }
-  .tile.sel { outline: 3px solid var(--ink); outline-offset: -3px; }
+  .tile.sel { outline: 4px solid var(--ink); outline-offset: -4px; }
   .tile.sel::after {
-    content: "✓"; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px;
-    background: var(--ink); color: var(--paper); display: grid; place-items: center; font-size: 13px;
+    content: "✓"; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px;
+    background: var(--ink); color: var(--lav); display: grid; place-items: center; font-size: 16px;
   }
   .scene { position: relative; width: 100%; aspect-ratio: 1; }
   .scene > canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
   .scene .grid { position: absolute; inset: 0; grid-template-columns: repeat(4, 1fr); grid-template-rows: repeat(4, 1fr); gap: 0; }
-  .scene .tile { background: transparent; border: 1px solid var(--paper); }
-  .scene .tile.sel { background: rgba(255,255,255,.35); }
+  .scene .tile { background: transparent; border: 1.5px solid rgba(213, 203, 243, .9); }
+  .scene .tile.sel { background: rgba(203, 190, 233, .4); }
 
   .icongrid { grid-template-columns: repeat(3, 1fr); }
-  .icongrid .tile { aspect-ratio: 1; border: 1px solid var(--ink); }
-  .icongrid .tile canvas { width: 70%; height: 70%; margin: 15%; }
+  .icongrid .tile {
+    aspect-ratio: 1; background: transparent;
+    border-style: solid; border-width: 9px 7px 7px 9px; border-color: var(--ink) var(--hi) var(--hi) var(--ink);
+    box-shadow: 2px 2px 0 var(--ink);
+  }
+  .icongrid .tile:hover { background: rgba(229, 225, 255, .35); }
+  .icongrid .tile canvas { width: 64%; height: 64%; margin: 18%; }
 
-  /* play area */
-  .area { position: relative; height: 260px; border: 1px solid var(--ink); overflow: hidden; background: var(--paper); touch-action: none; }
+  /* ---------- play area ---------- */
+  .area { position: relative; height: 408px; overflow: hidden; background: transparent; touch-action: none;
+    border-style: solid; border-width: 9px 7px 7px 9px; border-color: var(--ink) var(--hi) var(--hi) var(--ink);
+    box-shadow: 2px 2px 0 var(--ink); }
   .area .abs { position: absolute; }
   .beam {
-    position: absolute; left: 50%; top: 40px; width: 220px; height: 240px; transform: translateX(-50%);
+    position: absolute; left: 50%; top: 40px; width: 300px; height: calc(100% - 40px); transform: translateX(-50%);
     clip-path: polygon(42% 0, 58% 0, 100% 100%, 0 100%);
-    background-image: radial-gradient(var(--ink) 1px, transparent 1.2px); background-size: 4px 4px;
+    background-image: radial-gradient(var(--ink) 1.2px, transparent 1.4px); background-size: 5px 5px;
     opacity: .9;
   }
 
-  .meter { height: 18px; border: 2px solid var(--ink); position: relative; margin-top: 10px; }
+  .meter { height: 30px; position: relative; margin-top: 21px;
+    border-style: solid; border-width: 6px 5px 5px 6px; border-color: var(--ink) var(--hi) var(--hi) var(--ink); box-shadow: 2px 2px 0 var(--ink); }
   .meter i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--ink); width: 0; }
-  .meter .tick { position: absolute; top: -2px; bottom: -2px; width: 0; border-left: 2px dashed var(--ink); }
+  .meter .tick { position: absolute; top: -6px; bottom: -5px; width: 0; border-left: 2px dashed var(--ink); }
 
-  input[type=range] { width: 100%; accent-color: var(--ink); margin-top: 14px; }
-  .big { font-size: 34px; text-align: center; margin: 6px 0; letter-spacing: 2px; }
+  /* temperature slider: sunken track + raised thumb */
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; margin-top: 14px; background: transparent; }
+  input[type=range]::-webkit-slider-runnable-track {
+    height: 22px; background: transparent;
+    border-style: solid; border-width: 6px 5px 5px 6px; border-color: var(--ink) var(--hi) var(--hi) var(--ink); box-shadow: 2px 2px 0 var(--ink);
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 30px; height: 26px; margin-top: -8px;
+    border-style: solid; border-width: 5px 5px 6px; border-color: var(--btn-hi) var(--lav) var(--btn-lo);
+    background: var(--lav); box-shadow: 0 0 0 2px var(--ink);
+  }
+  input[type=range]::-moz-range-track {
+    height: 11px; background: transparent;
+    border-style: solid; border-width: 6px 5px 5px 6px; border-color: var(--ink) var(--hi) var(--hi) var(--ink); box-shadow: 2px 2px 0 var(--ink);
+  }
+  input[type=range]::-moz-range-thumb {
+    width: 20px; height: 15px; border-radius: 0;
+    border-style: solid; border-width: 5px 5px 6px; border-color: var(--btn-hi) var(--lav) var(--btn-lo);
+    background: var(--lav); box-shadow: 0 0 0 2px var(--ink);
+  }
+
+  .big { font-family: var(--f-glitch); font-size: 64px; text-align: center; margin: 4px 0; line-height: 1.1; }
   .center { text-align: center; }
-  .note { font-size: 11px; opacity: .8; }
+  .note { font-size: 16px; }
 
-  .corner { position: fixed; bottom: 8px; background: var(--paper); border: 1px solid var(--ink); padding: 2px 8px; font-size: 11px; z-index: 4; }
-  .corner.l { left: 8px; cursor: pointer; }
-  .corner.l:hover { background: var(--ink); color: var(--paper); }
-  .corner.r { right: 8px; }
+  /* ---------- corner chips ---------- */
+  .corner { position: fixed; bottom: 10px; padding: 5px 12px; z-index: 4;
+    font-family: var(--f-wide); font-stretch: 125%; font-weight: 700; font-size: 12px; }
+  .corner.l { left: 10px; cursor: pointer; background: var(--ink); color: var(--lav); }
+  .corner.l:hover { background: var(--lav); color: var(--ink); }
+  .corner.r { right: 10px; background: var(--lav); color: var(--ink); font-weight: 300; font-style: italic; }
 
   .ok-flash {
-    position: absolute; inset: 0; background: var(--paper); display: grid; place-items: center; z-index: 5;
-    font-size: 22px; letter-spacing: 3px;
-    background-image: radial-gradient(var(--ink) 1px, transparent 1.2px); background-size: 4px 4px;
+    position: absolute; inset: 0; display: grid; place-items: center; z-index: 5;
+    background-image: radial-gradient(var(--ink) 1.2px, transparent 1.4px); background-size: 5px 5px;
   }
-  .ok-flash span { background: var(--ink); color: var(--paper); padding: 6px 14px; }
+  .ok-flash span { background: var(--ink); color: var(--lav); padding: 14px 28px; font-family: var(--f-glitch); text-transform: uppercase; font-size: 34px; line-height: 1; }
   .ok-flash { animation: flashIn .25s steps(4) both; }
   .ok-flash span { animation: blink .5s steps(1) 2; }
   @keyframes flashIn { from { clip-path: inset(50% 0 50% 0); } to { clip-path: inset(0 0 0 0); } }
-  @keyframes blink { 50% { background: var(--paper); color: var(--ink); } }
+  @keyframes blink { 50% { background: var(--lav); color: var(--ink); } }
 
   /* page transition: dither dissolve layer inside the window */
   #dz { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 10; pointer-events: none; }
@@ -139,7 +257,7 @@
   #noise { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 50; pointer-events: none; image-rendering: pixelated; }
   .scan {
     position: fixed; inset: 0; z-index: 51; pointer-events: none;
-    background: repeating-linear-gradient(to bottom, rgba(95,160,230,.10) 0 1px, transparent 1px 3px);
+    background: repeating-linear-gradient(to bottom, rgba(44,38,38,.10) 0 1px, transparent 1px 3px);
     animation: roll 8s linear infinite;
   }
   @keyframes roll { to { background-position: 0 300px; } }
@@ -153,47 +271,49 @@
   }
   @media (prefers-reduced-motion: reduce) { .scan { animation: none; } }
 
-  /* error popups (shown on wrong answers) */
+  /* ---------- error popups (OUTERCHORD.EXE style) ---------- */
   .err-pop {
-    position: fixed; z-index: 40; width: 240px; max-width: calc(100vw - 32px);
-    background: var(--paper); border: 2px solid var(--ink); box-shadow: 5px 5px 0 var(--ink);
+    position: fixed; z-index: 40; width: 260px; max-width: calc(100vw - 32px);
+    background: var(--grad); border: 5px solid var(--ink); border-top: 0;
     pointer-events: none; /* never block the game underneath; only buttons are clickable */
     animation: popIn .22s steps(4) both;
   }
   .err-pop.out { animation: popOut .16s steps(3) both; }
   @keyframes popIn  { from { scale: .2 .05; } 60% { scale: 1.04 .1; } to { scale: 1 1; } }
   @keyframes popOut { to { scale: 1 .02; opacity: 0; } }
-  .err-pop .title { font-size: 12px; padding: 3px 5px 3px 7px; }
-  .err-pop .title b { cursor: pointer; }
-  .err-pop .in { display: flex; gap: 12px; align-items: flex-start; padding: 14px 14px 6px; font-size: 12px; line-height: 1.5; }
+  .err-pop .title { font-size: 12px; height: 24px; padding: 0 5px 0 10px; margin: 0 -5px; }
+  .err-pop .title b { cursor: pointer; width: 18px; height: 14px; border-width: 3px 3px 4px; }
+  .err-pop .in { display: flex; gap: 12px; align-items: flex-start; padding: 16px 14px 4px; }
   .err-pop .in canvas { width: 36px; height: 36px; flex: none; }
-  .err-pop .code { font-size: 10px; opacity: .75; display: block; margin-top: 4px; }
-  .err-pop .foot { display: flex; justify-content: center; padding: 6px 0 12px; }
-  .err-pop .foot .btn { padding: 3px 22px; }
+  .err-pop .msg { font-family: var(--f-glitch); text-transform: uppercase; font-size: 15px; line-height: 1.12; }
+  .err-pop .code { font-family: var(--f-mono); text-transform: none; font-size: 11px; color: var(--muted); display: block; margin-top: 8px; }
+  .err-pop .foot { display: flex; justify-content: center; padding: 8px 0 12px; }
+  .err-pop .foot .btn { min-height: 28px; padding: 0 24px; font-size: 15px; }
   .err-pop .btn, .err-pop .btns b { pointer-events: auto; }
 
-  /* on-screen keyboard (touch kiosk) */
+  /* ---------- on-screen keyboard (touch kiosk) ---------- */
   .vkb {
-    position: fixed; left: 50%; bottom: 0; z-index: 45; width: min(720px, 100vw);
+    position: fixed; left: 50%; bottom: 0; z-index: 45; width: min(756px, 100vw);
     translate: -50% 110%; transition: translate .22s steps(5);
-    background: var(--paper); border: 2px solid var(--ink); border-bottom: 0; box-shadow: 0 -5px 0 var(--ink);
+    background: var(--grad); border: 5px solid var(--ink); border-top: 0; border-bottom: 0;
     user-select: none; touch-action: manipulation;
   }
   .vkb.show { translate: -50% 0; }
-  .vkb .title { font-size: 12px; }
-  .vkb .keys { padding: 8px; display: flex; flex-direction: column; gap: 6px; }
-  .vkb .r { display: flex; gap: 6px; justify-content: center; }
+  .vkb .title { font-size: 14px; height: 30px; }
+  .vkb .keys { padding: 12px 10px; display: flex; flex-direction: column; gap: 8px; }
+  .vkb .r { display: flex; gap: 8px; justify-content: center; }
   .vkb button {
-    flex: 1 1 0; min-width: 0; height: 52px; max-width: 64px;
-    background: var(--paper); color: var(--ink); border: 2px solid var(--ink); box-shadow: 3px 3px 0 var(--ink);
-    font-size: 20px; cursor: pointer; padding: 0;
+    flex: 1 1 0; min-width: 0; height: 52px; max-width: 64px; cursor: pointer; padding: 0; color: var(--ink);
+    font-family: var(--f-glitch); font-size: 24px; line-height: 1;
+    border-style: solid; border-width: 5px 5px 7px; border-color: var(--btn-hi) var(--lav) var(--btn-lo);
+    background: var(--lav); box-shadow: 0 0 0 2px var(--ink);
   }
-  .vkb button:active, .vkb button.down { background: var(--ink); color: var(--paper); translate: 2px 2px; box-shadow: 1px 1px 0 var(--ink); }
-  .vkb button.w2 { flex-grow: 1.6; max-width: 110px; font-size: 14px; }
-  .vkb button.w5 { flex-grow: 5; max-width: 340px; font-size: 14px; }
-  .vkb button.ok { background: var(--ink); color: var(--paper); }
+  .vkb button:active, .vkb button.down { border-color: var(--btn-lo) var(--lav) var(--btn-hi); translate: 0 1px; }
+  .vkb button.w2 { flex-grow: 1.6; max-width: 110px; font-size: 18px; }
+  .vkb button.w5 { flex-grow: 5; max-width: 340px; font-size: 18px; }
+  .vkb button.ok { background: var(--ink); color: var(--lav); border-color: #4a4242 var(--ink) #1a1616; }
   .vkb.num button { max-width: 96px; height: 58px; }
-  body.kb-open { padding-bottom: 300px; }
+  body.kb-open { padding-bottom: 320px; }
   .field[inputmode="none"] { caret-color: var(--ink); cursor: pointer; }
 
   /* wrong tile mark */
@@ -201,33 +321,77 @@
   .tile.wrong canvas { opacity: .25; }
   .tile.wrong::after {
     content: "✕"; position: absolute; inset: 0; display: grid; place-items: center;
-    color: var(--paper); font-size: 44px;
+    color: var(--lav); font-size: 56px;
+  }
+
+  /* ---------- narrow screens ---------- */
+  /* ---------- compact window (~400px): same design, sizes tuned so text stays readable ---------- */
+  .win { width: min(400px, calc(100vw - 32px)); border-width: 0 4px 4px; }
+  .win .title { height: 28px; font-size: 13px; padding: 0 5px 0 10px; margin: 0 -4px; }
+  .win .btns { gap: 6px; }
+  .win .btns b { width: 18px; height: 14px; border-width: 3px 3px 4px; }
+  .win .menu { font-size: 13px; gap: 14px; padding: 0 10px; height: 21px; }
+  .win .body { padding: 14px 12px 18px; min-height: 120px; }
+  .win .status { height: 22px; padding: 0 8px; font-size: 11px; }
+  .win .status #msg { font-size: 10px; }
+  .win .prompt { padding: 14px 84px 14px 16px; min-height: 96px; margin-bottom: 12px; }
+  .win .prompt small { font-size: 13px; }
+  .win .prompt big { font-size: 26px; }
+  .win .plogo { right: 8px; width: 72px; font-size: 10px; z-index: 1; }
+  .win .plogo canvas { width: 30px; height: 30px; }
+  .win .prompt, .win .cbox { --sr: .5; }
+  .win .plogo span { position: relative; z-index: 1; background: var(--ink); padding: 0 2px; }
+  .win .cbox { padding: 0 84px 0 18px; gap: 14px; min-height: 96px; }
+  .win .cbox .sq { width: 24px; height: 24px; font-size: 18px; }
+  .win .cbox .lbl { font-size: 20px; }
+  .win .cbox.mini { min-height: 0; padding: 5px 9px; gap: 8px; }
+  .win .cbox.mini .lbl { font-size: 13px; }
+  .win .row { margin-top: 12px; gap: 8px; }
+  .win .btn { min-height: 38px; padding: 0 14px; font-size: 20px; }
+  .win .btn.lg { min-height: 44px; font-size: 23px; }
+  .win .btn.bev { min-height: 36px; padding: 0 10px; font-size: 15px; border-width: 5px 4px 4px 5px; }
+  .win .inset, .win .field, .win .area, .win .icongrid .tile { border-width: 6px 5px 5px 6px; }
+  .win .field { height: 38px; font-size: 16px; padding: 0 8px; }
+  .win .grid { gap: 8px; }
+  .win .scene .grid { gap: 0; }
+  .win .area { height: 260px; }
+  .win .meter { height: 22px; margin-top: 12px; border-width: 5px 4px 4px 5px; }
+  .win .big { font-size: 40px; }
+  .win .note { font-size: 12px; }
+  .win .ok-flash span { font-size: 24px; padding: 10px 20px; }
+  .win input[type=range]::-webkit-slider-runnable-track { height: 18px; border-width: 5px 4px 4px 5px; }
+  .win input[type=range]::-webkit-slider-thumb { width: 24px; height: 20px; margin-top: -6px; border-width: 4px 4px 5px; }
+
+  @media (max-width: 640px) {
+    .hdr h1 { font-size: 17px; }
+    .hdr small { font-size: 13px; }
   }
 </style>
 </head>
 <body>
 <canvas id="bg"></canvas>
+<canvas id="sky" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;image-rendering:pixelated;mix-blend-mode:difference"></canvas>
 
 <div class="hdr">
-  <h1><span id="hdrIcon"></span>I'm Not an Alien</h1>
-  <small id="lvlName">Level 1: Checkbox</small>
+  <h1 class="glitch-t"><span id="hdrIcon"></span>I'm Not an Alien</h1>
+  <small class="glitch-t" id="lvlName">Level 1: Checkbox</small>
 </div>
 
 <div class="win" id="win">
   <div class="title">
-    <span id="winTitle">C:\NOT_ALIEN\LVL_01.EXE</span>
-    <div class="btns"><b>_</b><b>[]</b><b>X</b></div>
+    <span id="winTitle">C:/Not_ALIEN/LVL.01.EXE</span>
+    <div class="btns"><b class="min"></b><b class="max"></b><b class="x"></b></div>
   </div>
-  <div class="menu"><span>File</span><span>Edit</span><span>View</span><span>Help</span></div>
+  <div class="menu"><span>File</span><span>Edit</span><span>View</span><span>Image</span><span>Help</span></div>
   <div class="body" id="body"></div>
-  <div class="status" id="status"><span id="obj">Lvl: 01/12</span><span id="msg">Awaiting input...</span><span>Earth Intranet</span></div>
+  <div class="status" id="status"><span id="obj">Lvl 01/13</span><span id="msg">Awaiting input...</span><span>OUTER Intranet</span></div>
 </div>
 
 <canvas id="noise"></canvas>
 <div class="scan"></div>
 
 <div class="vkb" id="vkb" aria-hidden="true">
-  <div class="title"><span>KEYBOARD.EXE</span><div class="btns"><b id="vkbClose">X</b></div></div>
+  <div class="title"><span>KEYBOARD.EXE</span><div class="btns"><b class="x" id="vkbClose"></b></div></div>
   <div class="keys" id="vkbKeys"></div>
 </div>
 
@@ -261,9 +425,9 @@
     vec2 q = vec2(fbm(uv+drift), fbm(uv+drift+vec2(5.2,1.3)));
     vec2 r = vec2(fbm(uv+1.8*q+vec2(1.7,9.2)+t*.06), fbm(uv+1.8*q+vec2(8.3,2.8)-t*.04));
     float n = fbm(uv+2.2*r+drift*.5);
-    float v = smoothstep(.26,.66,n);
+    float v = smoothstep(.14,.52,n); // lower thresholds = more black, less lavender
     float on = step(bayer8(px), v);
-    gl_FragColor = vec4(mix(vec3(1.), vec3(.3725,.6275,.902), on), 1.);
+    gl_FragColor = vec4(mix(vec3(.7961,.7451,.9137), vec3(.1725,.1490,.1490), on), 1.); // on = ink #2c2626, off = lavender #cbbee9
   }`;
   const sh = (t, s) => { const o = gl.createShader(t); gl.shaderSource(o, s); gl.compileShader(o); return o; };
   const prog = gl.createProgram();
@@ -285,9 +449,14 @@
 /* ==========================================================
    2-COLOR DITHER HELPERS
    ========================================================== */
-const INK = [95, 160, 230], PAPER = [255, 255, 255];
+const INK = [44, 38, 38], PAPER = [203, 190, 233]; // #2c2626 / #cbbee9 (design palette)
 const B8 = [0,32,8,40,2,34,10,42,48,16,56,24,50,18,58,26,12,44,4,36,14,46,6,38,60,28,52,20,62,30,54,22,
             3,35,11,43,1,33,9,41,51,19,59,27,49,17,57,25,15,47,7,39,13,45,5,37,63,31,55,23,61,29,53,21];
+
+// when the paper is the darker color (dark theme), bright source pixels become ink so images
+// keep their natural light/dark instead of looking like a film negative
+const lumOf = c => (0.3 * c[0] + 0.59 * c[1] + 0.11 * c[2]) / 255;
+const INK_IS_LIGHT = lumOf(INK) > lumOf(PAPER);
 
 // converts whatever is drawn on ctx into ink/paper dots; outline=true draws edges of opaque shapes
 function dither(ctx, w, h, { outline = false, gain = 1 } = {}) {
@@ -299,7 +468,8 @@ function dither(ctx, w, h, { outline = false, gain = 1 } = {}) {
     let on = false;
     if (A[i]) {
       const lum = (0.3 * d[k] + 0.59 * d[k + 1] + 0.11 * d[k + 2]) / 255;
-      const dark = Math.min(1, (1 - lum) * gain * (outline ? 1.25 : 1) + (outline ? .08 : 0));
+      const amt = INK_IS_LIGHT ? lum : 1 - lum;
+      const dark = Math.min(1, amt * gain * (outline ? 1.25 : 1) + (outline ? .08 : 0));
       on = dark > (B8[(y % 8) * 8 + (x % 8)] + .5) / 64;
       if (outline && !on) {
         const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1 || !A[i - 1] || !A[i + 1] || !A[i - w] || !A[i + w];
@@ -342,12 +512,81 @@ function setMsg(text, err = false) { msgEl.textContent = text; statusEl.classLis
 /* ---------- global static noise ---------- */
 const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let noiseBoost = 0; // 0..1, raised during transitions / errors
+
+/* ---------- pixel stars + shooting stars over the cloud background ---------- */
+// Each star pixel shows the OPPOSITE of the cloud pixel under it: black on lavender, lavender
+// on black. Trick: the canvas uses mix-blend-mode:difference and paints INK+PAPER, so
+// |(INK+PAPER) - PAPER| = INK and |(INK+PAPER) - INK| = PAPER, pixel for pixel.
+(() => {
+  const cv = document.getElementById('sky'), x = cv.getContext('2d');
+  const S = 2; // one sky pixel = 2 CSS px, same grain as the clouds
+  const SWAP = `rgb(${INK.map((c, i) => Math.min(255, c + PAPER[i]))})`; // stars + shooting stars
+  let w, h, stars = [], meteors = [], nextMeteor = 0, last = 0;
+  const px = (cx, cy) => x.fillRect(Math.round(cx), Math.round(cy), 1, 1);
+  const resize = () => {
+    w = cv.width = Math.max(1, Math.ceil(innerWidth / S)); h = cv.height = Math.max(1, Math.ceil(innerHeight / S));
+    const n = Math.round(w * h / 2600);
+    stars = Array.from({ length: n }, () => ({
+      x: Math.floor(Math.random() * w), y: Math.floor(Math.random() * h),
+      big: Math.random() < .45, speed: rand(.4, 1.6), phase: Math.random() * 10,
+    }));
+  };
+  addEventListener('resize', resize); resize();
+
+  function drawStar(s, t) {
+    const v = Math.sin(t * s.speed + s.phase);   // twinkle: off -> dot -> cross
+    if (v < -.55) return;
+    const pts = s.big && v > .35 ? [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] : [[0, 0]];
+    for (const [dx, dy] of pts) px(s.x + dx, s.y + dy);
+  }
+
+  function spawnMeteor() {
+    // always from the upper right, heading down-left; short-lived streak
+    const speed = rand(180, 260);                  // sky px / s
+    const ang = rand(.45, .7);                     // below horizontal (radians)
+    meteors.push({
+      x: rand(w * .25, w), y: rand(0, h * .55),
+      vx: -Math.cos(ang) * speed, vy: Math.sin(ang) * speed,
+      len: Math.round(rand(10, 18)), life: 0, max: rand(.4, .7),
+    });
+  }
+  function drawMeteor(m) {
+    const n = Math.hypot(m.vx, m.vy), ux = m.vx / n, uy = m.vy / n;
+    const k = m.life / m.max;
+    // tail grows in, then shrinks away toward the head as the meteor burns out
+    const len = Math.round(m.len * Math.min(1, k / .3) * Math.min(1, (1 - k) / .45));
+    for (let i = len; i >= 1; i--) {
+      if (((i * 7) % 10) / 10 > 1 - i / (len + 1) + .15) continue; // dithered, thinning tail
+      px(m.x - ux * i, m.y - uy * i);
+    }
+    if (k < .85) { px(m.x, m.y); px(m.x + 1, m.y); px(m.x, m.y + 1); px(m.x + 1, m.y + 1); } // 2x2 head
+    else px(m.x, m.y);                                                                    // fading spark
+  }
+
+  (function frame(now) {
+    requestAnimationFrame(frame);
+    if (now - last < 1000 / 30) return; // chunky 30fps like the rest of the screen
+    const dt = Math.min((now - last) / 1000, .1); last = now;
+    const t = now / 1000;
+    x.clearRect(0, 0, w, h);
+    x.fillStyle = SWAP;
+    stars.forEach(s => drawStar(s, REDUCED ? 1.6 : t));
+    if (REDUCED) return;
+    if (now > nextMeteor) { spawnMeteor(); nextMeteor = now + rand(2500, 7000); }
+    meteors = meteors.filter(m => {
+      m.life += dt; m.x += m.vx * dt; m.y += m.vy * dt;
+      if (m.life >= m.max) return false;
+      drawMeteor(m);
+      return true;
+    });
+  })(0);
+})();
 (() => {
   const cv = document.getElementById('noise'), x = cv.getContext('2d');
   const S = 2; // noise grain size (px)
   let img, buf, w, h, band = -40, last = 0;
   const INK32 = (255 << 24) | (INK[2] << 16) | (INK[1] << 8) | INK[0];
-  const WHITE32 = 0xffffffff;
+  const WHITE32 = (255 << 24) | (PAPER[2] << 16) | (PAPER[1] << 8) | PAPER[0]; // paper-colored specks
   const resize = () => {
     w = cv.width = Math.max(1, Math.ceil(innerWidth / S)); h = cv.height = Math.max(1, Math.ceil(innerHeight / S));
     img = x.createImageData(w, h); buf = new Uint32Array(img.data.buffer);
@@ -808,7 +1047,7 @@ function errorPopups(text, extraOverride) {
   const extra = extraOverride || shuffle(ERR_EXTRA).slice(0, 2);
   const list = [['VERIFICATION FAILED', text, '0x' + (cur + 1).toString(16).padStart(4, '0').toUpperCase() + 'F41L'], ...extra];
   const r = win.getBoundingClientRect();
-  const W = Math.min(240, innerWidth - 32), H = 150;
+  const W = Math.min(260, innerWidth - 32), H = 170;
   // Park the popups around the edges of the game window so they only nibble
   // at its border (~25%) instead of covering tiles / buttons.
   const roomSide = Math.min(r.left, innerWidth - r.right) > W * .55;
@@ -833,8 +1072,8 @@ function errorPopups(text, extraOverride) {
     errTimers.push(setTimeout(() => {
       sfx.error(k);
       const p = $(`<div class="err-pop" role="alertdialog">
-        <div class="title"><span>${title}</span><div class="btns"><b>X</b></div></div>
-        <div class="in"><div class="ic"></div><div>${msg}<span class="code">Error code: ${code}</span></div></div>
+        <div class="title"><span>${title}</span><div class="btns"><b class="x"></b></div></div>
+        <div class="in"><div class="ic"></div><div class="msg">${msg}<span class="code">Error code: ${code}</span></div></div>
         <div class="foot"><button class="btn">OK</button></div></div>`);
       p.style.left = slots[i][0] + 'px';
       p.style.top = slots[i][1] + 'px';
@@ -851,6 +1090,12 @@ function errorPopups(text, extraOverride) {
   });
 }
 
+// alienCAPCHA badge + scattered pixel stars on the right of every dark panel (positions from the design)
+const CAPCHA_STARS = [[132, 25, 1], [142, 38], [31, 30], [24, 24], [186, 84], [170, 110], [153, 102], [23, 108, 1], [42, 116]];
+const CAPCHA_LOGO = `<div class="plogo"><span>alienCAPCHA</span></div>` +
+  CAPCHA_STARS.map(([r, t, p]) => `<i class="star${p ? ' p' : ''}" style="right:calc(${r}px * var(--sr, 1));top:calc(${t}px * var(--sr, 1) + 4px)"></i>`).join('');
+const fillLogos = (root) => root.querySelectorAll('.plogo').forEach(e => { if (!e.querySelector('canvas')) e.prepend(icon('🛸', 28)); });
+
 const api = {
   pass(text = 'VERIFIED') {
     if (busy) return; busy = true;
@@ -866,7 +1111,7 @@ const api = {
     win.classList.remove('shake'); void win.offsetWidth; win.classList.add('shake');
     noiseBoost = .7; setTimeout(() => noiseBoost = 0, 260);
   },
-  prompt(small, big) { return `<div class="prompt"><small>${small}</small><big>${big}</big></div>`; },
+  prompt(small, big) { return `<div class="prompt"><small>${small}</small><big>${big}</big>${CAPCHA_LOGO}</div>`; },
 };
 
 function load(i) {
@@ -875,16 +1120,16 @@ function load(i) {
   errTimers.forEach(clearTimeout); errTimers = [];
   document.querySelectorAll('.err-pop').forEach(p => p.remove());
   cur = Math.max(0, Math.min(i, LEVELS.length - 1));
-  try { localStorage.setItem('notalien.level', cur); } catch (e) {}
   const L = LEVELS[cur];
   const n = String(cur + 1).padStart(2, '0');
   scramble(document.getElementById('lvlName'), L.final ? 'Complete' : `Level ${cur + 1}: ${L.name}`, 600);
-  scramble(document.getElementById('winTitle'), L.final ? 'C:\\NOT_ALIEN\\RESULT.LOG' : `C:\\NOT_ALIEN\\LVL_${n}.EXE`, 500);
-  document.getElementById('obj').textContent = L.final ? 'Lvl: --' : `Lvl: ${n}/${LEVELS.length - 1}`;
+  scramble(document.getElementById('winTitle'), L.final ? 'C:/Not_ALIEN/RESULT.LOG' : `C:/Not_ALIEN/LVL.${n}.EXE`, 500);
+  document.getElementById('obj').textContent = L.final ? 'Lvl --' : `Lvl ${n}/${LEVELS.length - 1}`;
   setMsg('Awaiting input...');
   body.innerHTML = '';
   vkb.hide();
   cleanup = L.render(body, api) || null;
+  fillLogos(body);
   body.querySelectorAll('.field').forEach(vkb.attach);
 }
 
@@ -898,8 +1143,7 @@ const LEVELS = [
 /* 1 ------------------------------------------------------- */
 { name: 'Checkbox', render(el, g) {
   el.innerHTML = `<div class="cbox"><div class="sq" id="sq"></div><div class="lbl">I'm not an alien</div>
-    <div class="logo" id="logo">alienCAPTCHA</div></div>`;
-  el.querySelector('#logo').prepend(icon('🛸', 28));
+    ${CAPCHA_LOGO}</div>`;
   const sq = el.querySelector('#sq');
   sq.onclick = () => {
     if (sq.classList.contains('on')) return;
@@ -914,7 +1158,7 @@ const LEVELS = [
 { name: 'UFO', render(el, g) {
   el.innerHTML = g.prompt('Select all squares with a', 'UFO') +
     `<div class="scene"><canvas class="px" id="sc"></canvas><div class="grid" id="gr"></div></div>
-     <div class="row"><span class="note">If there are none, click verify</span><button class="btn">VERIFY</button></div>`;
+     <div class="row"><span class="note">If there are none; click verify</span><button class="btn lg">VERIFY</button></div>`;
   const R = 96, cv = el.querySelector('#sc'); cv.width = cv.height = R;
   const x = cv.getContext('2d');
   // sky
@@ -962,7 +1206,7 @@ const LEVELS = [
 { name: 'Human Text', render(el, g) {
   const word = pick(['EARTHLING', 'OXYGEN', 'MONDAY', 'TAXES', 'SANDWICH', 'GRAVITY']);
   el.innerHTML = g.prompt('Type the text below', 'Human Language') +
-    `<canvas class="px" id="tx" style="width:100%;border:1px solid var(--ink)"></canvas>
+    `<canvas class="px inset" id="tx" style="width:100%"></canvas>
      <div class="row"><input class="field" id="in" autocomplete="off" placeholder="type here"><button class="btn">VERIFY</button></div>`;
   const W = 160, H = 48, cv = el.querySelector('#tx'); cv.width = W; cv.height = H;
   const x = cv.getContext('2d');
@@ -996,7 +1240,7 @@ const LEVELS = [
   el.innerHTML = g.prompt('Standard human specification', 'Fingers on ONE hand?') +
     `<div class="center" id="ic"></div>
      <div class="row"><input class="field" id="in" type="number" min="0" placeholder="0"><button class="btn">VERIFY</button></div>`;
-  const hand = icon('✋', 32); hand.style.cssText = 'width:96px;height:96px;margin:0 auto'; el.querySelector('#ic').appendChild(hand);
+  const hand = icon('✋', 32); hand.style.cssText = 'width:96px;height:96px;margin:4px auto'; el.querySelector('#ic').appendChild(hand);
   const inp = el.querySelector('#in');
   const check = () => {
     const v = Number(inp.value);
@@ -1091,7 +1335,7 @@ const LEVELS = [
 /* 7 ------------------------------------------------------- */
 { name: 'Breathing', render(el, g) {
   el.innerHTML = g.prompt('Humans breathe oxygen.', 'Hold to inhale for 3s') +
-    `<div class="center"><button class="btn" id="hold" style="padding:18px 40px;font-size:18px;touch-action:none">INHALE</button></div>
+    `<div class="center"><button class="btn" id="hold" style="min-height:52px;padding:0 34px;font-size:26px;touch-action:none">INHALE</button></div>
      <div class="meter"><i id="bar"></i><div class="tick" style="left:${2.7 / 5 * 100}%"></div><div class="tick" style="left:${3.5 / 5 * 100}%"></div></div>
      <div class="row note"><span id="sec">0.00s</span><span>release between the lines</span></div>`;
   const hold = el.querySelector('#hold'), bar = el.querySelector('#bar'), sec = el.querySelector('#sec');
@@ -1131,7 +1375,7 @@ const LEVELS = [
   let rot = pick([45, 90, 135, 180, 225, 270, 315]);
   el.innerHTML = g.prompt('Rotate the human until it', 'Stands Upright') +
     `<div class="center" style="padding:16px 0"><div id="wrap" style="display:inline-block;transition:transform .2s steps(3)"></div></div>
-     <div class="row"><div><button class="btn ghost" id="l">↺</button> <button class="btn ghost" id="r">↻</button></div><button class="btn" id="v">VERIFY</button></div>`;
+     <div class="row"><div><button class="btn ghost bev" id="l">↺</button> <button class="btn ghost bev" id="r" style="margin-left:10px">↻</button></div><button class="btn" id="v">VERIFY</button></div>`;
   const wrap = el.querySelector('#wrap'); const h = icon('🧍', 32); h.style.cssText = 'width:128px;height:128px'; wrap.appendChild(h);
   const upd = () => wrap.style.transform = `rotate(${rot}deg)`; upd();
   el.querySelector('#l').onclick = () => { rot -= 45; upd(); };
@@ -1147,12 +1391,13 @@ const LEVELS = [
 /* 9 ------------------------------------------------------- */
 { name: 'Gravity', render(el, g) {
   el.innerHTML = g.prompt('Earth has gravity. Catch', '3 Falling Apples') +
-    `<div class="area" id="ar"></div><div class="row note"><span id="cnt">Caught: 0/3</span><span>Newton would be proud</span></div>`;
+    `<div class="area" id="ar"></div><div class="row note"><span id="cnt">Caught 0/3</span><span>Newton would be proud</span></div>`;
   const ar = el.querySelector('#ar'), cnt = el.querySelector('#cnt');
-  const apple = icon('🍎', 24); apple.classList.add('abs'); apple.style.cssText += 'width:48px;height:48px;cursor:pointer';
+  const AS = 48; // apple display size (px)
+  const apple = icon('🍎', 24); apple.classList.add('abs'); apple.style.cssText += `width:${AS}px;height:${AS}px;cursor:pointer`;
   ar.appendChild(apple);
   let y, x, v, caught = 0, raf, last = performance.now();
-  const drop = () => { y = -50; v = 0; x = rand(10, ar.clientWidth - 58); };
+  const drop = () => { y = -50; v = 0; x = rand(10, ar.clientWidth - AS - 10); };
   drop();
   const loop = (now) => {
     const dt = Math.min((now - last) / 1000, .05); last = now;
@@ -1188,8 +1433,8 @@ const LEVELS = [
   };
   apple.onpointerdown = () => {
     sfx.crunch();
-    burst(x + 24, y + 24);
-    caught++; cnt.textContent = `Caught: ${caught}/3`;
+    burst(x + AS / 2, y + AS / 2);
+    caught++; cnt.textContent = `Caught ${caught}/3`;
     if (caught >= 3) { cancelAnimationFrame(raf); apple.style.visibility = 'hidden'; g.pass(); } else drop();
   };
   return () => { cancelAnimationFrame(raf); cancelAnimationFrame(praf); };
@@ -1220,7 +1465,7 @@ const LEVELS = [
   const ar = el.querySelector('#ar');
   const ufo = icon('🛸', 28); ufo.classList.add('abs'); ufo.style.cssText += 'width:84px;height:84px;left:50%;top:-6px;transform:translateX(-50%)';
   ar.appendChild(ufo);
-  const cb = $(`<div class="cbox abs" style="padding:6px 10px;gap:8px"><div class="sq" style="width:20px;height:20px"></div><span style="font-size:12px">I'm not an alien</span></div>`);
+  const cb = $(`<div class="cbox mini abs"><div class="sq" style="width:18px;height:18px;font-size:13px"></div><span class="lbl">I'm not an alien</span></div>`);
   ar.appendChild(cb);
   let y, t = 0, raf, last = performance.now(), done = false;
   const reset = () => { y = ar.clientHeight - 44; t = 0; };
@@ -1238,8 +1483,13 @@ const LEVELS = [
     raf = requestAnimationFrame(loop);
   };
   raf = requestAnimationFrame(loop);
-  cb.querySelector('.sq').onpointerdown = e => {
-    if (done) return; done = true; e.target.textContent = '✓';
+  // touch assist: a tap anywhere on the moving checkbox (box or label) or within SLOP px around it counts
+  const SLOP = 30;
+  ar.onpointerdown = e => {
+    if (done) return;
+    const r = cb.getBoundingClientRect(); // on-screen rect (includes rotation / window zoom)
+    if (e.clientX < r.left - SLOP || e.clientX > r.right + SLOP || e.clientY < r.top - SLOP || e.clientY > r.bottom + SLOP) return;
+    done = true; cb.querySelector('.sq').textContent = '✓';
     cancelAnimationFrame(raf); hum.stop(); setTimeout(() => g.pass('RESCUED'), 300);
   };
   return () => { cancelAnimationFrame(raf); hum.stop(); };
@@ -1273,14 +1523,14 @@ const LEVELS = [
 /* 13: final question ------------------------------------- */
 { name: 'Final Check', render(el, g) {
   el.innerHTML = g.prompt('Final verification', 'Are you human?') +
-    `<div class="area" id="ar" style="height:200px"></div>`;
+    `<div class="area" id="ar" style="height:220px"></div>`;
   const ar = el.querySelector('#ar');
-  const yes = $(`<button class="btn abs">YES, I'M HUMAN</button>`);
-  const no = $(`<button class="btn ghost abs">NO, I'M AN ALIEN</button>`);
+  const yes = $(`<button class="btn bev abs" style="width:42%">YES, I'M HUMAN</button>`);
+  const no = $(`<button class="btn ghost bev abs" style="width:42%">NO, I'M AN ALIEN</button>`);
   ar.append(yes, no);
   requestAnimationFrame(() => {
-    yes.style.left = (ar.clientWidth * .28 - yes.offsetWidth / 2) + 'px'; yes.style.top = '80px';
-    no.style.left = (ar.clientWidth * .72 - no.offsetWidth / 2) + 'px'; no.style.top = '80px';
+    yes.style.left = (ar.clientWidth * .28 - yes.offsetWidth / 2) + 'px'; yes.style.top = (ar.clientHeight / 2 - yes.offsetHeight / 2) + 'px';
+    no.style.left = (ar.clientWidth * .72 - no.offsetWidth / 2) + 'px'; no.style.top = (ar.clientHeight / 2 - no.offsetHeight / 2) + 'px';
   });
   let dodges = 0;
   const lines = ['Hm?', 'Slippery.', 'Why is it running?', 'Almost...', 'Are you sure?', 'Fine.'];
@@ -1300,15 +1550,14 @@ const LEVELS = [
 
 function showEnd(el, kind) {
   cur = LEVELS.length - 1;
-  try { localStorage.setItem('notalien.level', cur); localStorage.setItem('notalien.end', kind); } catch (e) {}
   scramble(document.getElementById('lvlName'), 'Complete', 600);
-  scramble(document.getElementById('winTitle'), 'C:\\NOT_ALIEN\\RESULT.LOG', 500);
-  document.getElementById('obj').textContent = 'Lvl: --';
+  scramble(document.getElementById('winTitle'), 'C:/Not_ALIEN/RESULT.LOG', 500);
+  document.getElementById('obj').textContent = 'Lvl --';
   const human = kind === 'human';
   const pct = (97 + Math.random() * 2.9).toFixed(1);
   el.innerHTML = `<div class="center" style="padding:10px 0">
       <div id="ic" style="display:flex;justify-content:center"></div>
-      <div class="big" style="font-size:26px">${human ? 'VERIFIED HUMAN' : 'WELCOME BACK'}</div>
+      <div class="big" style="font-size:32px">${human ? 'VERIFIED HUMAN' : 'WELCOME BACK'}</div>
       <p>${human ? `You are <b>${pct}%</b> human.<br>The remaining ${(100 - pct).toFixed(1)}% is under review.`
                  : 'We knew it.<br>The mothership is waiting, commander.'}</p>
       <div class="row" style="justify-content:center;margin-top:16px"><button class="btn" id="again">PLAY AGAIN</button></div>
@@ -1319,17 +1568,13 @@ function showEnd(el, kind) {
   setMsg(human ? 'Session terminated. Have a nice human day.' : 'Beaming up...');
 }
 
-let saved = 0;
-try { saved = Number(localStorage.getItem('notalien.level')) || 0; } catch (e) {}
-if (saved === LEVELS.length - 1) {
-  let kind = 'human'; try { kind = localStorage.getItem('notalien.end') || 'human'; } catch (e) {}
-  LEVELS[saved].render = (el) => showEnd(el, kind);
-}
+// every visit (reload, closing and reopening the tab) starts again from level 1
+try { localStorage.removeItem('notalien.level'); localStorage.removeItem('notalien.end'); } catch (e) {}
 // boot: window powers on like a CRT
-load(saved);
+load(0);
 busy = true;
 transitionIn().then(() => busy = false);
 </script>
-<script src="../shared/back.js" data-color="#5fa0e6" data-bg="#ffffff"></script>
+<script src="../shared/back.js" data-color="#2c2626" data-bg="#cbbee9"></script>
 </body>
 </html>

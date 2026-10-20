@@ -9,6 +9,8 @@
 #   /d/api/sounds  /d/api/stats  /d/api/archive  /d/api/archives                   -> d/sound-data/sounds-YYYY-MM-DD.jsonl
 #   /imnota/api/sounds  /imnota/api/sounds/dates  /imnota/api/sounds/<date>         -> imnota/sound-archive/YYYY-MM-DD.jsonl
 #   /tenshi/memory                      GET | POST                                  -> tenshi/memory/sounds.jsonl
+#   /c3/api/sounds                      GET | POST {session, events}                -> c3/sound-data/sounds.jsonl
+#   /outerchord/api/sound-log           GET | POST one event per request            -> outerchord/sound-data/sound-log.jsonl
 #   /api/reset                          POST  moves all of the above to archive/<time>/ (make chord calls it)
 #   /api/songs                          GET | POST  the songs make chord has made     -> songs/songs.jsonl
 #   everything else                     static files from this folder
@@ -282,6 +284,55 @@ $eStore = Join-Path $eData 'sounds.jsonl'
 
 function Handle-E($ctx, [string]$sub) {
   if ($sub -ne '/api/sounds') { return $false }
+  return Handle-SessionLog $ctx $eStore
+}
+
+# =====================================================================
+# c3  (Passacaglia) - same {session, events} shape as e, sent by c3/sound-log.js
+# =====================================================================
+$c3Data = Join-Path $root 'c3\sound-data'
+New-Item -ItemType Directory -Force $c3Data | Out-Null
+$c3Store = Join-Path $c3Data 'sounds.jsonl'
+
+function Handle-C3($ctx, [string]$sub) {
+  if ($sub -ne '/api/sounds') { return $false }
+  return Handle-SessionLog $ctx $c3Store
+}
+
+# =====================================================================
+# outerchord - the piece POSTs each sound on its own (sendBeacon, one JSON
+# object per request) to api/sound-log, as its own serve.ps1 did
+# =====================================================================
+$ocData = Join-Path $root 'outerchord\sound-data'
+New-Item -ItemType Directory -Force $ocData | Out-Null
+$ocStore = Join-Path $ocData 'sound-log.jsonl'
+
+function Handle-OuterChord($ctx, [string]$sub) {
+  if ($sub -ne '/api/sound-log') { return $false }
+  $req = $ctx.Request
+  if ($req.HttpMethod -eq 'POST') {
+    if ($req.ContentLength64 -gt 64KB) { Send $ctx 413 $null $null; return $true }
+    $body = ReadBody $req
+    $o = $null
+    try { $o = $body | ConvertFrom-Json } catch {}
+    if ($o -and $o.type) {
+      $o | Add-Member -NotePropertyName rt -NotePropertyValue ((Get-Date).ToString('o')) -Force
+      [IO.File]::AppendAllText($ocStore, (($o | ConvertTo-Json -Compress -Depth 5) + "`n"), $utf8)
+    }
+    Send $ctx 204 $null $null
+  }
+  elseif ($req.HttpMethod -eq 'GET') {
+    $out = New-Object Collections.Generic.List[string]
+    if (Test-Path $ocStore) { foreach ($ln in [IO.File]::ReadLines($ocStore)) { if ($ln.Trim()) { $out.Add($ln) } } }
+    SendText $ctx 200 ('[' + ($out -join ',') + ']')
+  }
+  else { SendText $ctx 405 '{"error":"method"}' }
+  return $true
+}
+
+# POST {session, events:[...]} -> one line per event in $store; GET -> JSON array
+function Handle-SessionLog($ctx, [string]$store) {
+  $eStore = $store
   $req = $ctx.Request
   if ($req.HttpMethod -eq 'POST') {
     if ($req.ContentLength64 -gt 2MB) { SendObj $ctx 413 @{ ok = $false; error = 'too large' }; return $true }
@@ -365,7 +416,9 @@ function Handle-Reset($ctx) {
     @{ piece = 'e';                files = @(Get-ChildItem $eData -Filter 'sounds.jsonl' -File -ErrorAction SilentlyContinue) },
     @{ piece = 'd';                files = @(Get-ChildItem $dData -Filter 'sounds-*.jsonl' -File -ErrorAction SilentlyContinue) },
     @{ piece = 'imnota';           files = @(Get-ChildItem $imArchive -Filter '*.jsonl' -File -ErrorAction SilentlyContinue) },
-    @{ piece = 'tenshi';           files = @(Get-ChildItem $tsDir -Filter 'sounds.jsonl' -File -ErrorAction SilentlyContinue) }
+    @{ piece = 'tenshi';           files = @(Get-ChildItem $tsDir -Filter 'sounds.jsonl' -File -ErrorAction SilentlyContinue) },
+    @{ piece = 'c3';               files = @(Get-ChildItem $c3Data -Filter 'sounds.jsonl' -File -ErrorAction SilentlyContinue) },
+    @{ piece = 'outerchord';       files = @(Get-ChildItem $ocData -Filter 'sound-log.jsonl' -File -ErrorAction SilentlyContinue) }
   )
   $moved = 0
   foreach ($s in $sets) {
@@ -391,7 +444,7 @@ Write-Host "  data : cattlemutilation\data, d\sound-data, imnota\sound-archive, 
 Write-Host "  stop : Ctrl+C"
 
 # data folders are written by the server, never served as plain files
-$blocked = '^(archive|songs|cattlemutilation/data|e/sound-data|d/sound-data|imnota/sound-archive)(/|$)|(^|/)\.|\.ps1$|\.bat$'
+$blocked = '^(archive|songs|cattlemutilation/data|e/sound-data|c3/sound-data|outerchord/sound-data|d/sound-data|imnota/sound-archive)(/|$)|(^|/)\.|\.ps1$|\.bat$'
 
 while ($l.IsListening) {
   $ctx = $l.GetContext()
@@ -405,11 +458,13 @@ while ($l.IsListening) {
 
     # ---- per-piece APIs ----
     $handled = $false
-    if ($path -match '^/(cattlemutilation|e|d|imnota|tenshi)(/.*)$') {
+    if ($path -match '^/(cattlemutilation|e|d|imnota|tenshi|c3|outerchord)(/.*)$') {
       $piece = $Matches[1]; $sub = $Matches[2]
       switch ($piece) {
         'cattlemutilation' { $handled = Handle-Cattle $ctx $sub }
         'e'                { $handled = Handle-E $ctx $sub }
+        'c3'               { $handled = Handle-C3 $ctx $sub }
+        'outerchord'       { $handled = Handle-OuterChord $ctx $sub }
         'd'                { $handled = Handle-D $ctx $sub }
         'imnota'           { $handled = Handle-Imnota $ctx $sub }
         'tenshi'           { $handled = Handle-Tenshi $ctx $sub }

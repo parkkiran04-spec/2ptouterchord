@@ -229,8 +229,8 @@
       const n = T.needle();
       const glowR = 0.06 * R * (1 + pulse * 0.7);
       const gl = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, glowR);
-      gl.addColorStop(0, `rgba(255,236,190,${0.5 + pulse * 0.35})`);
-      gl.addColorStop(1, 'rgba(255,214,150,0)');
+      gl.addColorStop(0, `rgba(255,255,255,${0.5 + pulse * 0.35})`);
+      gl.addColorStop(1, "rgba(255,255,255,0)");
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
       ctx.fillStyle = gl;

@@ -327,34 +327,6 @@ html, body {
   background: radial-gradient(ellipse at center, transparent 42%, rgba(0,0,0,0.6) 100%);
 }
 
-/* ---------- HUD text ---------- */
-
-.hud {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 60;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 28px 34px;
-  pointer-events: none;
-  opacity: 0;
-  transition: opacity 1.2s ease 0.8s;
-}
-.scene.loaded .hud { opacity: 1; }
-
-.hud-mark {
-  color: rgba(255,255,255,0.85);
-  font-size: 13px;
-  letter-spacing: 0.32em;
-  font-weight: 600;
-}
 @media (prefers-reduced-motion: reduce) {
   .float, .blink, .astro-row-track, .sparkle { animation: none !important; }
-}
-
-@media (max-width: 720px) {
-  .hud { padding: 20px; }
 }

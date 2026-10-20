@@ -9,32 +9,6 @@
   let hintText = null;
 
   UI.init = function (h) {
-    // brushes
-    const sw = $('swatches');
-    cfg.brushes.forEach((b, i) => {
-      const btn = document.createElement('button');
-      btn.className = 'swatch';
-      btn.style.setProperty('--c', b.color);
-      btn.setAttribute('role', 'radio');
-      btn.setAttribute('aria-label', b.name);
-      btn.title = b.name;
-      btn.addEventListener('click', () => {
-        UI.setBrush(i);
-        h.onBrush(i);
-      });
-      sw.appendChild(btn);
-    });
-    UI.setBrush(0);
-
-    // key & scale
-    const keySel = $('keySelect');
-    cfg.keys.forEach((k) => keySel.add(new Option(k, k)));
-    keySel.addEventListener('change', () => h.onKey(keySel.value));
-    const scaleSel = $('scaleSelect');
-    Object.keys(cfg.scales).forEach((s) => scaleSel.add(new Option(s, s)));
-    scaleSel.addEventListener('change', () => h.onScale(scaleSel.value));
-
-    seg($('rpmSeg'), 'rpm', (v) => h.onRpm(parseFloat(v)));
     seg($('modeSeg'), 'mode', h.onMode);
     seg($('bandSeg'), 'band', h.onBand);
     seg($('stepsSeg'), 'steps', (v) => h.onSteps(parseInt(v, 10)));
@@ -97,9 +71,6 @@
   }
 
   UI.syncSettings = function () {
-    $('keySelect').value = cfg.key;
-    $('scaleSelect').value = cfg.scale;
-    setSeg($('rpmSeg'), 'rpm', String(cfg.rpm));
     setSeg($('modeSeg'), 'mode', cfg.mode);
     setSeg($('bandSeg'), 'band', cfg.band);
     setSeg($('stepsSeg'), 'steps', String(cfg.steps));
@@ -109,10 +80,6 @@
     UI.setRpmLabel(cfg.rpm);
   };
 
-  UI.setBrush = function (i) {
-    $('swatches').querySelectorAll('.swatch').forEach((b, j) => b.setAttribute('aria-checked', String(i === j)));
-    $('brushName').textContent = cfg.brushes[i].name;
-  };
 
   UI.setRpmLabel = (rpm) => {
     const el = $('rpmLabel'); // the header label is optional

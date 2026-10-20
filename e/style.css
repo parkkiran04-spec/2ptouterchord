@@ -7,7 +7,8 @@
   --line: rgba(1, 62, 31, 0.16);
   --warn: #bc2d0b;
   --shadow: 0 6px 18px rgba(1, 62, 31, 0.12);
-  font-family: 'Nunito', ui-rounded, 'SF Pro Rounded', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: 'Pretendard', 'Pretendard Variable', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  letter-spacing: -0.05em; /* -50 tracking, inherited by everything */
 }
 
 * { box-sizing: border-box; }
@@ -22,7 +23,7 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-button, select, input { font: inherit; color: inherit; }
+button, select, input { font: inherit; color: inherit; letter-spacing: inherit; }
 [hidden] { display: none !important; }
 
 .app {
@@ -45,12 +46,10 @@ button, select, input { font: inherit; color: inherit; }
   margin: 0;
   font-size: 1.05rem;
   font-weight: 900;
-  letter-spacing: 0.01em;
 }
 .rpm {
   font-size: 0.74rem;
   font-weight: 800;
-  letter-spacing: 0.16em;
   color: var(--muted);
 }
 
@@ -104,31 +103,6 @@ button, select, input { font: inherit; color: inherit; }
   box-shadow: var(--shadow);
 }
 
-.swatch-row { display: flex; gap: 6px; padding: 0 4px; }
-.swatch {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: var(--c);
-  cursor: pointer;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.13);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-.swatch:hover { transform: scale(1.08); }
-.swatch[aria-checked="true"] {
-  transform: scale(1.08);
-  box-shadow: 0 0 0 2px var(--chip), 0 0 0 4px var(--c);
-}
-.brush-name {
-  min-width: 4.6em;
-  padding: 0 10px 0 6px;
-  font-size: 0.76rem;
-  font-weight: 800;
-  color: var(--muted);
-}
-
 select {
   appearance: none;
   -webkit-appearance: none;
@@ -142,6 +116,7 @@ select {
 }
 select option { color: #222; }
 
+.icons { display: flex; align-items: center; gap: 10px; }
 .seg { display: flex; gap: 2px; }
 .seg button, .icon {
   border: none;
@@ -156,8 +131,10 @@ select option { color: #222; }
   color: var(--muted);
 }
 .seg button[aria-pressed="true"] { background: var(--ink); color: var(--chip); }
-.icon { width: 34px; height: 34px; padding: 0; font-size: 1rem; }
-select:hover, .seg button:not([aria-pressed="true"]):hover, .icon:hover { background: var(--chip-hover); }
+/* bare icons: no chip, no shadow */
+.icon { width: 34px; height: 34px; padding: 0; font-size: 1.05rem; color: var(--muted); background: none; box-shadow: none; }
+.icon:hover { color: var(--ink); background: none; }
+select:hover, .seg button:not([aria-pressed="true"]):hover { background: var(--chip-hover); }
 button:focus-visible, select:focus-visible, input:focus-visible {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
@@ -185,7 +162,6 @@ button:focus-visible, select:focus-visible, input:focus-visible {
   flex-shrink: 0;
   font-size: 0.72rem;
   font-weight: 900;
-  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -228,8 +204,6 @@ button:focus-visible, select:focus-visible, input:focus-visible {
 @media (max-width: 560px) {
   .bottom { gap: 8px; }
   .toolbar { gap: 6px; }
-  .swatch { width: 24px; height: 24px; }
-  .brush-name { display: none; }
   .panel { bottom: calc(150px + env(safe-area-inset-bottom)); }
 }
 
@@ -247,5 +221,3 @@ body.bl {
 body.bl .group, body.bl .panel, body.bl .pill { background: #000; border-color: var(--line); }
 body.bl .seg button[aria-pressed="true"] { background: #fff; color: #000; }
 body.bl .toast { background: #fff; color: #000; }
-body.bl .swatch { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.7); }
-body.bl .swatch[aria-checked="true"] { box-shadow: 0 0 0 2px #000, 0 0 0 4px #fff; }

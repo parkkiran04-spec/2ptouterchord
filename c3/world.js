@@ -27,6 +27,30 @@ const MARK_THICKNESS = 0.06;     // a thin solid bar, not a 1px GL line (those r
 const MARK_INSET = CUBE_SIZE * 0.035; // how far each mark's ends sit from the wall's corners — cosmetic only now,
                                        // see the note on painting's u-clamp below for why it no longer bounds painting
 
+// A screen-pixel drag maps to a much bigger move on the canvas the farther
+// the camera is from the wall it's painting — the same raycasting that lets
+// a drag track the wall accurately also means its *effective* sensitivity
+// scales with distance, roughly linearly (measured: a wall a camera flying
+// around the room is often 15-23 units from reads a given screen-pixel drag
+// as 4-5x bigger on the canvas than the same drag at SENSITIVITY_REF_DIST,
+// where it reads as close to 1:1). SENSITIVITY_REF_DIST is the distance that
+// sensitivity is calibrated to feel right at; trackActiveStroke damps every
+// other distance's raw movement down (never up — gain is capped at 1) to
+// match it, so painting feels the same regardless of how far away you are.
+const SENSITIVITY_REF_DIST = 5;
+const SENSITIVITY_GAIN_MIN = 0.15; // floor, so painting from very far away is damped but never frozen
+
+// The control list used to live in a DOM panel at the bottom of the screen;
+// it's now a sign floating in the room instead, directly in front of where
+// the camera starts, so it's the first thing you see rather than something
+// separate from the space you're standing in.
+const HELP_SIGN_TEXT_COLOR = '#1E0685'; // indigo, same as PALETTE.indigo
+const HELP_SIGN_CANVAS_W = 1200;
+const HELP_SIGN_CANVAS_H = 800;
+const HELP_SIGN_DISTANCE = 11; // world units in front of the camera's starting position
+const HELP_SIGN_WIDTH = 16;
+const HELP_SIGN_HEIGHT = HELP_SIGN_WIDTH * (HELP_SIGN_CANVAS_H / HELP_SIGN_CANVAS_W);
+
 const STAR_COLOR_A = 0xe84175; // every star (and meteor) is one of exactly these two colours, fixed, never blended
 const STAR_COLOR_B = 0x341c91;
 const SKY_RADIUS = 170;       // the gradient sky dome, just inside the camera's far plane (200)
@@ -58,7 +82,11 @@ let renderer, scene, camera, room;
 let starLayers = [];
 let meteors = [];
 let faces = []; // { brush, texture, material }, indexed like FACE_NAMES
-let yaw = Math.PI * 0.75, pitch = -0.2;
+// Every run starts in the same spot — standing at the centre of the room's
+// floor, looking straight ahead, level (not tilted up or down toward the
+// open top/bottom) — and only drifts from there once updateWander() takes
+// over a moment later.
+let yaw = 0, pitch = 0;
 let hoverFace = 0;
 let activeFace = null;
 let looking = false;
@@ -72,6 +100,21 @@ const heldKeys = new Set(); // lower-cased wasd currently held, for flying aroun
 const pointers = new Map();
 let drawingPointerId = null;
 let twoFinger = null;
+
+// Holding a single point still (no keyboard on the deployment device, so
+// this replaces the old space-bar shortcut) auto-fills the wall under it;
+// tapping the same spot twice quickly (replacing the old 'e' shortcut)
+// toggles the eraser. Both are timing/distance gestures layered on top of
+// the same press that already starts painting, not a separate input mode —
+// painting starts immediately as before and is pre-empted only if the
+// gesture actually completes.
+const LONG_PRESS_MS = 550;
+const LONG_PRESS_MOVE_TOLERANCE = 14; // px; past this it's a drag, not a hold
+const DOUBLE_TAP_MS = 350;
+const DOUBLE_TAP_DIST = 40; // px between two taps, to count as the same spot
+let longPressTimer = null;
+let longPressStartX = 0, longPressStartY = 0, longPressFace = null;
+let lastTapTime = -Infinity, lastTapX = 0, lastTapY = 0;
 
 async function initWorld() {
   renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -92,7 +135,7 @@ async function initWorld() {
   scene.add(sky);
 
   camera = new THREE.PerspectiveCamera(CAMERA_FOV, window.innerWidth / window.innerHeight, 0.05, 200);
-  camera.position.set(0, 0, 0);
+  camera.position.set(0, -(CUBE_SIZE / 2 - MOVE_MARGIN), 0); // floor centre — see the note on `yaw`/`pitch` above
 
   const materials = [];
   for (let i = 0; i < FACE_NAMES.length; i++) {
@@ -149,6 +192,12 @@ async function initWorld() {
   }
 
   updateCameraOrientation();
+  // The sign is only ever rasterized once, so if Pretendard isn't done
+  // loading yet at this exact moment, the fallback font would get baked
+  // into its texture permanently instead of a transient, self-correcting
+  // flash of the wrong font like a DOM element would show.
+  try { await document.fonts.load('600 44px Pretendard'); } catch (err) { /* fall back silently */ }
+  scene.add(buildHelpSign());
   buildHUD(BRUSH);
   updateHUD();
 
@@ -357,6 +406,49 @@ function buildWallMarks(half, thickness, inset, colorA, colorB) {
   }
 
   return group;
+}
+
+// A sign floating in the room, facing back toward wherever the camera
+// started, with the control list painted on it in indigo text over a fully
+// transparent background (DoubleSide, so it reads the same regardless of
+// which way its geometry happens to wind relative to the camera).
+function buildHelpSign() {
+  const canvas = document.createElement('canvas');
+  canvas.width = HELP_SIGN_CANVAS_W;
+  canvas.height = HELP_SIGN_CANVAS_H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = HELP_SIGN_TEXT_COLOR;
+  ctx.textBaseline = 'top';
+  ctx.letterSpacing = '-0.05em'; // "자간 -50" in the usual per-mille convention
+
+  ctx.font = '600 44px Pretendard, ui-monospace, Menlo, monospace';
+  ctx.fillText(BRUSH.name, 30, 24);
+
+  const rowH = 54;
+  let y = 24 + 70;
+  ctx.font = '600 26px Pretendard, ui-monospace, Menlo, monospace';
+  for (const [keys] of BRUSH.help) { ctx.fillText(keys, 30, y); y += rowH; }
+
+  y = 24 + 70;
+  ctx.font = '26px Pretendard, ui-monospace, Menlo, monospace';
+  for (const [, effect] of BRUSH.help) { ctx.fillText(effect, 430, y); y += rowH; }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.generateMipmaps = false;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+
+  const geo = new THREE.PlaneGeometry(HELP_SIGN_WIDTH, HELP_SIGN_HEIGHT);
+  const mat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  const mesh = new THREE.Mesh(geo, mat);
+
+  const forward = new THREE.Vector3();
+  camera.getWorldDirection(forward);
+  mesh.position.copy(camera.position).addScaledVector(forward, HELP_SIGN_DISTANCE);
+  mesh.lookAt(camera.position);
+  mesh.renderOrder = 2;
+  return mesh;
 }
 
 // PointsMaterial draws plain squares unless given a sprite texture to
@@ -583,6 +675,23 @@ function faceJacobianAt(faceIndex, e) {
   };
 }
 
+// How far the camera currently is from a given wall, measured straight along
+// the axis that wall is perpendicular to.
+function distanceToFace(faceIndex) {
+  const { axis, sign } = FACE_PLANES[faceIndex];
+  const h = CUBE_SIZE / 2;
+  const coord = axis === 'x' ? camera.position.x : camera.position.z;
+  return Math.abs(sign * h - coord);
+}
+
+// See SENSITIVITY_REF_DIST above: how much of this wall's raw, raycasted
+// movement to actually apply right now, so a drag feels the same whether
+// the camera is close to the wall or clear across the room from it.
+function sensitivityGain(faceIndex) {
+  const d = Math.max(0.5, distanceToFace(faceIndex));
+  return Math.min(1, Math.max(SENSITIVITY_GAIN_MIN, SENSITIVITY_REF_DIST / d));
+}
+
 // Per-stroke tracking state: the wall-space position the stroke has
 // reached, the screen position it was last updated at, and the most
 // recently measured Jacobian between the two (see trackActiveStroke).
@@ -609,12 +718,14 @@ function beginStrokeTracking(e, faceIndex, uv) {
 function trackActiveStroke(e) {
   const ndc = ndcFromEvent(e);
   const direct = uvOnFacePlane(activeFace, ndc.x, ndc.y);
+  const gain = sensitivityGain(activeFace);
   if (direct) {
-    strokeU = direct.u; strokeV = direct.v;
+    strokeU += (direct.u - strokeU) * gain;
+    strokeV += (direct.v - strokeV) * gain;
   } else if (strokeJac) {
     const dx = e.clientX - strokeLastX, dy = e.clientY - strokeLastY;
-    strokeU += strokeJac.jXu * dx + strokeJac.jYu * dy;
-    strokeV += strokeJac.jXv * dx + strokeJac.jYv * dy;
+    strokeU += (strokeJac.jXu * dx + strokeJac.jYu * dy) * gain;
+    strokeV += (strokeJac.jXv * dx + strokeJac.jYv * dy) * gain;
   } else {
     return null;
   }
@@ -638,9 +749,59 @@ function startPainting(e) {
 }
 
 function stopPainting() {
+  clearLongPress();
   if (activeFace === null) return;
   faces[activeFace].brush.pointerUp();
   activeFace = null;
+}
+
+function clearLongPress() {
+  if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+}
+
+function armLongPress(e, faceIndex) {
+  clearLongPress();
+  longPressStartX = e.clientX; longPressStartY = e.clientY;
+  longPressFace = faceIndex;
+  longPressTimer = setTimeout(triggerLongPress, LONG_PRESS_MS);
+}
+
+// Fires while the pointer is still down and hasn't moved: drop the stroke
+// that's been running since pointerdown (with no mark left behind — a plain
+// tap still gets its little patch, but a hold is a different gesture) and
+// auto-fill the wall under it instead. The pointer stays physically down
+// until release, but with activeFace/drawingPointerId cleared it's just
+// along for the ride from here.
+function triggerLongPress() {
+  longPressTimer = null;
+  if (activeFace !== longPressFace) return;
+  const brush = faces[longPressFace] && faces[longPressFace].brush;
+  activeFace = null;
+  drawingPointerId = null;
+  if (brush) { brush.cancelStroke(); brush.autoFill(); }
+  updateHUD();
+}
+
+function cancelLongPressIfMoved(e) {
+  if (!longPressTimer) return;
+  if (Math.hypot(e.clientX - longPressStartX, e.clientY - longPressStartY) > LONG_PRESS_MOVE_TOLERANCE) clearLongPress();
+}
+
+// Called just before a painting gesture ends, while we still know where it
+// started — a second tap landing close to, and soon after, the last one
+// toggles the eraser instead of (also) leaving its own mark.
+function handleTapRelease(e) {
+  const moved = Math.hypot(e.clientX - longPressStartX, e.clientY - longPressStartY);
+  if (moved > LONG_PRESS_MOVE_TOLERANCE) return; // a drag, not a tap
+  const now = performance.now();
+  const dist = Math.hypot(e.clientX - lastTapX, e.clientY - lastTapY);
+  if (now - lastTapTime < DOUBLE_TAP_MS && dist < DOUBLE_TAP_DIST) {
+    toggleEraser();
+    lastTapTime = -Infinity; // require a fresh pair before toggling again
+  } else {
+    lastTapTime = now; lastTapX = e.clientX; lastTapY = e.clientY;
+  }
+  updateHUD();
 }
 
 function twoFingerState() {
@@ -670,7 +831,7 @@ function onPointerDown(e) {
       return;
     }
     if (e.button !== 0) return;
-    startPainting(e);
+    if (startPainting(e)) armLongPress(e, activeFace);
     return;
   }
 
@@ -678,7 +839,7 @@ function onPointerDown(e) {
   // over for looking around + pinch-to-move instead.
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   if (pointers.size === 1) {
-    if (startPainting(e)) drawingPointerId = e.pointerId;
+    if (startPainting(e)) { drawingPointerId = e.pointerId; armLongPress(e, activeFace); }
   } else if (pointers.size === 2) {
     stopPainting();
     drawingPointerId = null;
@@ -696,6 +857,7 @@ function onPointerMove(e) {
       return;
     }
     if (activeFace !== null) {
+      cancelLongPressIfMoved(e);
       const uv = trackActiveStroke(e);
       if (uv) {
         const [px, py] = uvToPixel(uv);
@@ -726,6 +888,7 @@ function onPointerMove(e) {
   }
 
   if (activeFace !== null && e.pointerId === drawingPointerId) {
+    cancelLongPressIfMoved(e);
     const uv = trackActiveStroke(e);
     if (uv) {
       const [px, py] = uvToPixel(uv);
@@ -736,13 +899,16 @@ function onPointerMove(e) {
 
 function onPointerUp(e) {
   if (e.pointerType === 'mouse') {
+    if (activeFace !== null) handleTapRelease(e);
     stopPainting();
     looking = false;
     return;
   }
 
+  const wasDrawing = e.pointerId === drawingPointerId;
   pointers.delete(e.pointerId);
-  if (e.pointerId === drawingPointerId) {
+  if (wasDrawing) {
+    if (activeFace !== null) handleTapRelease(e);
     stopPainting();
     drawingPointerId = null;
   }
@@ -778,7 +944,6 @@ function onKeyDown(e) {
   else if (key === ']') growBrush();
   else if (key === '-') shrinkDensity();
   else if (key === '=' || key === '+') growDensity();
-  else if (key === ' ') { if (face) face.autoFill(); e.preventDefault(); }
   else if (key === 'e' || key === 'E') toggleEraser();
   else if (key === 'g' || key === 'G') toggleShowStaff();
   else if (key === 'c' || key === 'C') { if (face) face.clearAll(); }

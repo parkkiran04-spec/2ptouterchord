@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Drawn Groove — 33⅓ RPM</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@600;700;800;900&display=swap">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
+  
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,22 +19,7 @@
       <p class="hint" id="hint" aria-live="polite">tap for a dot · hold 1s to draw a line</p>
 
       <div class="toolbar">
-        <div class="group swatches" role="radiogroup" aria-label="Brush (instrument)">
-          <div id="swatches" class="swatch-row"></div>
-          <span class="brush-name" id="brushName">Piano</span>
-        </div>
-
-        <div class="group">
-          <select id="keySelect" aria-label="Key"></select>
-          <select id="scaleSelect" aria-label="Scale"></select>
-        </div>
-
-        <div class="group seg" id="rpmSeg" aria-label="Speed">
-          <button data-rpm="33.333">33⅓</button>
-          <button data-rpm="45">45</button>
-        </div>
-
-        <div class="group">
+        <div class="icons">
           <button class="icon" id="undoBtn" title="Undo (Ctrl+Z)" aria-label="Undo">↶</button>
           <button class="icon" id="clearBtn" title="Clear record" aria-label="Clear">✕</button>
           <button class="icon" id="moreBtn" title="More" aria-label="More options" aria-expanded="false">⋯</button>

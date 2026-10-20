@@ -1,4 +1,4 @@
-// Drawing: stroke input in record coordinates, hand-drawn rendering, glow and sparkles.
+// Drawing: stroke input in record coordinates, hand-drawn rendering and note glow.
 (function () {
   'use strict';
   const TAU = Math.PI * 2;
@@ -14,7 +14,6 @@
     holding: false,
     layer: null,
     layerDirty: true,
-    sparkles: [],
     onChange: null,
   });
 
@@ -40,6 +39,7 @@
     const now = performance.now();
     D.holding = true;
     gesture++;
+    D.brushIndex = Math.floor(Math.random() * cfg.brushes.length); // instruments are picked at random
     last = { x, y, ts: now };
     press = { start: now, dot: stampDot(x, y) };
   };
@@ -83,7 +83,6 @@
     const w = cfg.brush.dotWidth * (0.9 + Math.random() * 0.2);
     const dot = { id: D.nextId++, brush: D.brushIndex, group: gesture, points: [{ r: p.rn, t: p.t, w }], glow: 0, cells: null, cellsDirty: true };
     D.strokes.push(dot);
-    spawnSparkles(dot.points[0], cfg.brushes[dot.brush].color);
     inkLater(dot);
     changed();
     return dot;
@@ -158,7 +157,6 @@
     if (!s) return;
     D.current = null;
     const p = s.points[s.points.length - 1];
-    if (p) spawnSparkles(p, cfg.brushes[s.brush].color);
     inkLater(s);
     changed();
   }
@@ -198,26 +196,8 @@
   D.byId = (id) => D.strokes.find((s) => s.id === id);
 
   // ---- effects ----
-  function spawnSparkles(p, color) {
-    const x = p.r * rec.radius * Math.cos(p.t);
-    const y = p.r * rec.radius * Math.sin(p.t);
-    for (let i = 0; i < 4; i++) {
-      const a = Math.random() * TAU;
-      const v = 18 + Math.random() * 42;
-      D.sparkles.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, max: 0.5 + Math.random() * 0.4, color });
-    }
-  }
-
   D.updateEffects = function (dt) {
     for (const s of D.strokes) if (s.glow > 0) s.glow = s.glow < 0.01 ? 0 : s.glow * Math.exp(-dt * 4.5);
-    for (const sp of D.sparkles) {
-      sp.life += dt;
-      sp.x += sp.vx * dt;
-      sp.y += sp.vy * dt;
-      sp.vx *= 0.92;
-      sp.vy *= 0.92;
-    }
-    D.sparkles = D.sparkles.filter((sp) => sp.life < sp.max);
   };
 
   // ---- rendering (all in record space: origin at record center, unrotated) ----
@@ -340,23 +320,4 @@
     }
   };
 
-  D.renderSparkles = function (c) {
-    c.save();
-    c.globalCompositeOperation = 'lighter';
-    c.lineCap = 'round';
-    for (const sp of D.sparkles) {
-      const k = sp.life / sp.max;
-      const size = (1 - k) * 4 + 1;
-      c.globalAlpha = 1 - k;
-      c.strokeStyle = D.mono ? '#ffffff' : sp.color;
-      c.lineWidth = 1.4;
-      c.beginPath();
-      c.moveTo(sp.x - size, sp.y);
-      c.lineTo(sp.x + size, sp.y);
-      c.moveTo(sp.x, sp.y - size);
-      c.lineTo(sp.x, sp.y + size);
-      c.stroke();
-    }
-    c.restore();
-  };
 })();

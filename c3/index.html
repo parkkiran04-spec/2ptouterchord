@@ -6,6 +6,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/p5@1.9.4/lib/p5.min.js"></script>
+  <link rel="stylesheet" as="style" crossorigin
+    href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.css" />
   <style>
     html, body { margin: 0; height: 100%; overflow: hidden; background: #111; }
     canvas { display: block; }
@@ -13,13 +15,13 @@
     #faces { position: fixed; left: -99999px; top: 0; }
     #hud {
       position: fixed; left: 14px; bottom: 14px; z-index: 10;
-      font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+      font: 12px/1.5 Pretendard, ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: -0.05em; /* "자간 -50" in the usual per-mille convention */
       color: #111; background: rgba(255,255,255,0.92);
       border: 1px solid #111; padding: 10px 12px;
-      pointer-events: none; user-select: none; max-width: 460px; white-space: nowrap;
+      pointer-events: none; user-select: none; white-space: nowrap;
     }
-    #hud b { display: inline-block; min-width: 76px; margin-right: 8px; }
-    #hud .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    #hud .row { display: flex; align-items: center; gap: 8px; }
     #swatch { width: 14px; height: 14px; border-radius: 50%; border: 1px solid #111; }
     #swatch.hidden, #hud.hidden { display: none; }
   </style>
@@ -29,10 +31,10 @@
   <div id="faces"></div>
   <div id="hud">
     <div class="row"><span id="swatch"></span><span id="status"></span></div>
-    <div id="help"></div>
   </div>
   <script src="shared/hud.js"></script>
   <script src="shared/audio.js"></script>
+  <script src="sound-log.js"></script>
   <script src="brushes/score/sketch.js"></script>
   <script src="world.js"></script>
 <script src="../shared/back.js" data-color="#341c91"></script>

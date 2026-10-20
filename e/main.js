@@ -257,12 +257,26 @@
     c.beginPath();
     c.arc(rec.cx, rec.cy, inner, 0, TAU);
     c.stroke();
-    // brighter window right under the needle
+    // Brighter window at the needle, fading away to both sides along the groove.
+    const peak = 0.1 + needlePulse * 0.11;
+    const spread = 0.5; // radians to each side
     c.beginPath();
-    c.arc(rec.cx, rec.cy, outer, n.angle - 0.2, n.angle + 0.2);
-    c.arc(rec.cx, rec.cy, inner, n.angle + 0.2, n.angle - 0.2, true);
+    c.arc(rec.cx, rec.cy, outer, n.angle - spread, n.angle + spread);
+    c.arc(rec.cx, rec.cy, inner, n.angle + spread, n.angle - spread, true);
     c.closePath();
-    c.fillStyle = `rgba(115,186,156,${0.07 + needlePulse * 0.1})`;
+    if (c.createConicGradient) {
+      const g = c.createConicGradient(n.angle - spread, rec.cx, rec.cy);
+      const f = (spread * 2) / TAU; // share of the circle the window covers
+      g.addColorStop(0, 'rgba(115,186,156,0)');
+      g.addColorStop(f * 0.3, `rgba(115,186,156,${peak * 0.45})`);
+      g.addColorStop(f * 0.5, `rgba(115,186,156,${peak})`);
+      g.addColorStop(f * 0.7, `rgba(115,186,156,${peak * 0.45})`);
+      g.addColorStop(f, 'rgba(115,186,156,0)');
+      g.addColorStop(1, 'rgba(115,186,156,0)');
+      c.fillStyle = g;
+    } else {
+      c.fillStyle = `rgba(115,186,156,${peak * 0.7})`;
+    }
     c.fill();
     c.restore();
   }
@@ -297,7 +311,6 @@
     rec.render(ctx, (c) => {
       D.render(c);
       renderRipples(c);
-      D.renderSparkles(c);
     });
     renderBand(ctx);
     renderPressRing(ctx);
@@ -390,18 +403,22 @@
     UI.syncSettings();
   }
 
+  // No pickers any more: every record gets a random key and scale.
+  function randomizeMusic() {
+    const names = Object.keys(cfg.scales);
+    cfg.key = cfg.keys[Math.floor(Math.random() * cfg.keys.length)];
+    cfg.scale = names[Math.floor(Math.random() * names.length)];
+  }
+  randomizeMusic();
+
   UI.init({
-    onBrush: (i) => D.setBrush(i),
-    onKey: (k) => { cfg.key = k; },
-    onScale: (s) => { cfg.scale = s; },
-    onRpm: (v) => { cfg.rpm = v; UI.setRpmLabel(v); },
     onMode: (m) => { cfg.mode = m; T.syncSweep(); },
     onBand: (b) => { cfg.band = b; },
     onTempo: (v) => { cfg.speedMultiplier = v; },
     onMotion: (m) => { cfg.motion = m; frameHold = nextHold; },
     onSteps: (n) => { cfg.steps = n; S.invalidateAll(D.strokes); },
     onUndo: () => D.undo(),
-    onClear: () => { D.clear(); ripples = []; art.resetGlass(); },
+    onClear: () => { D.clear(); ripples = []; art.resetGlass(); randomizeMusic(); },
     onPreset: (name) => {
       D.setStrokes(St.presets[name]());
       UI.toast(`Preset: ${name}`);

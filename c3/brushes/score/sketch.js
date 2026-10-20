@@ -60,20 +60,25 @@ const TWIST_RELAX = 0.015;    // per px of travel, how quickly the ribbon settle
 const GROW_SPEED = 0.4;    // px per ms that liquid spreads out from the stamp point
 const DOT_MS = 160;        // how long a dot takes to swell up
 
+// A fast drag can call stamp() many times within the same real instant (the
+// spacing while-loop in strokeTo can run several iterations in one
+// pointermove), which used to mean every one of those stamps' notes playing
+// at literally the same moment. Interactive stamps (never auto-fill's, which
+// already paces itself with autoDelay) are queued at least this far apart —
+// if the next one would've landed sooner than that, it's pushed out instead
+// — so a fast drag reads as a quick little run of notes rather than a chord.
+const STAMP_SOUND_GAP = 100;
+
 const BRUSH = {
-  name: 'Score Brush',
+  name: 'Passacaglia',
   swatch: true,
   help: [
-    ['drag', 'paint a wall; the staff note at each snippet plays as you go'],
-    ['right-drag / arrows', 'look around the room'],
-    ['w a s d', 'fly around inside it (otherwise it drifts on its own)'],
-    ['1 finger', 'paint (touch)'],
-    ['2 fingers', 'drag to look around, pinch to fly (touch)'],
-    ['1–6 / 0', 'ink, pink, indigo, maroon, violet, magenta / random'],
-    ['[ ]', 'brush size   - = density'],
-    ['space', 'auto-fill the wall you are facing   e eraser'],
-    ['g', 'hide staff   c clear wall   r new staff'],
-    ['p', 'save wall PNG   h hide this'],
+    ['드래그', '벽에 그리기 — 지나가는 자리마다 오선보 음이 바로 재생됨'],
+    ['오른쪽 드래그', '주위 둘러보기'],
+    ['손가락 1개', '그리기 (터치)'],
+    ['손가락 2개', '드래그로 둘러보기, 오므리거나 벌려서 이동 (터치)'],
+    ['한 지점을 길게 누르기', '그 벽 자동으로 채우기'],
+    ['더블탭 / 더블클릭', '지우개 켜기/끄기'],
   ],
 };
 
@@ -101,6 +106,9 @@ function createScoreFace(size) {
   let ribbonQueue = [];    // staff segments scheduled for later (auto-fill)
   let autoDelay = 0;       // ms offset applied to everything created (auto-fill)
   let rec = null;          // primitive list being recorded by the snip* functions
+  let recL = null;         // the { li, dir, col } of the snippet currently being recorded —
+                           // read by dot() so every circle knows its own staff line automatically
+  let nextStampSlot = 0;   // p.millis()-space: see STAMP_SOUND_GAP below
   let forceRefresh = true; // one-shot: tells isAnimating() to report true for exactly one
                            // frame, so a texture upload isn't skipped after a change (like
                            // clearAll) that isn't itself a stroke or a growing snippet —
@@ -119,6 +127,22 @@ function createScoreFace(size) {
     p.draw = function () {
       const now = p.millis();
       flushRibbonQueue(p, now);
+
+      // Each note-circle sounds exactly once, the moment its own growth
+      // animation starts revealing it (not when the stamp that created it
+      // was recorded) — so a fast drag's burst of stamps still comes out as
+      // a little run of separate notes paced by how the circles themselves
+      // appear, rather than every one of them playing at once. Checked here,
+      // once a frame, on every active snippet, regardless of whether this
+      // is the frame that finishes it or just continues it.
+      for (const s of active) {
+        for (const pr of s.prims) {
+          if (pr.k === 'dot' && !pr.sounded && now >= s.t0 + pr.start) {
+            pr.sounded = true;
+            try { pluckNote(staffNoteFreq(pr.li)); } catch (err) { /* see the note below on dropped snippets */ }
+          }
+        }
+      }
 
       // Bake finished snippets into the paint layer first, so nothing
       // flickers. This is wrapped per-snippet: p5's colour parsing has an
@@ -316,6 +340,7 @@ function createScoreFace(size) {
       const dir = p.random() < 0.6 ? -1 : 1; // mostly back over the ribbon just drawn
       const L = { li, dir, col };
       rec = [];
+      recL = L;
       switch (kind) {
         case 'chain':   snipChain(p, L); break;
         case 'cluster': snipCluster(p, L); break;
@@ -333,19 +358,37 @@ function createScoreFace(size) {
         case 'blob':    snipBlob(p, L); break;
         case 'swipe':   snipSwipe(p, L); break;
       }
+      // A few snippet types (bar, swell, swipe) are pure strokes with no
+      // circle of their own — give the stamp a silent, invisible one (d: 0,
+      // so drawDot never draws it) anyway, purely so it still has a note to
+      // sound. Every other type already has at least one real circle.
+      if (!rec.some(pr => pr.k === 'dot')) rec.push({ k: 'dot', x: 0, y: 0, d: 0, col, li });
       const prims = rec;
-      active.push(schedule(p, prims, x, y, ang));
-      pluckNote(staffNoteFreq(li));
+
+      // Queue this stamp's reveal (and so its sound) at least STAMP_SOUND_GAP
+      // after the last one, interactively — a fast drag's burst of stamps
+      // then plays out as a little run instead of a simultaneous chord.
+      // Auto-fill already paces itself with autoDelay, so it's left alone.
+      let queueDelay = 0;
+      if (autoDelay === 0) {
+        const now = p.millis();
+        queueDelay = Math.max(0, nextStampSlot - now);
+        nextStampSlot = Math.max(now, nextStampSlot) + STAMP_SOUND_GAP;
+      }
+      active.push(schedule(p, prims, x, y, ang, queueDelay));
     } catch (err) {
       console.warn('score-brush: a stamp failed partway through and was skipped', err);
     } finally {
       rec = null;
+      recL = null;
     }
   }
 
   // Give every primitive a start time and duration based on how far it is
   // from the stamp point (the local origin), so the snippet spreads outward.
-  function schedule(p, prims, x, y, ang) {
+  // `extraDelay` additionally pushes the whole snippet's timeline back — see
+  // the stamp-spacing queue in stamp() above.
+  function schedule(p, prims, x, y, ang, extraDelay = 0) {
     const speed = GROW_SPEED * p.random(0.75, 1.25);
     let end = 0;
     for (const pr of prims) {
@@ -368,7 +411,7 @@ function createScoreFace(size) {
       }
       end = p.max(end, pr.start + pr.dur);
     }
-    return { x, y, ang, prims, t0: p.millis() + autoDelay, end };
+    return { x, y, ang, prims, t0: p.millis() + autoDelay + extraDelay, end };
   }
 
   function pathLength(pts) {
@@ -548,7 +591,14 @@ function createScoreFace(size) {
   function hairW() { return Math.max(0.9, u * 0.1 * bs); }
 
   // recorders used by the snippet functions
-  function dot(x, y, col, d = dotD()) { rec.push({ k: 'dot', x, y, d, col }); }
+  function dot(x, y, col, d = dotD()) {
+    // Every circle works out its own staff line from where it actually
+    // sits, rather than inheriting a single line for the whole snippet — a
+    // cluster's or a chord's dots land on several different lines, and each
+    // should sound its own matching note when it pops in.
+    const li = recL ? recL.li + y / u : 0;
+    rec.push({ k: 'dot', x, y, d, col, li });
+  }
   function path(pts, wAt, col) { if (pts.length > 1) rec.push({ k: 'path', pts, wAt, col }); }
 
   function samplePath(fn, n) {
@@ -867,6 +917,11 @@ function createScoreFace(size) {
     pointerDown(x, y) { beginStroke(x, y); },
     pointerMove(x, y) { feedStroke(p5inst, x, y); },
     pointerUp() { endStroke(); forceRefresh = true; },
+    // Drops whatever stroke is in progress with no mark left behind — unlike
+    // pointerUp/endStroke, which always leaves at least the short "plain
+    // click" patch. Used when a gesture turns out to be something other than
+    // painting (a long-press, say) after a stroke has already begun.
+    cancelStroke() { st = null; },
     // true while this wall's canvas could still be changing — a live
     // stroke, a snippet still growing, or auto-fill still queued — so the
     // caller knows when it's safe to skip re-uploading an unchanged canvas
