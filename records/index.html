@@ -208,8 +208,8 @@ async function load(){
     const li = document.createElement('li');
     li.className = 'row'; li.tabIndex = 0; li.dataset.id = t.id;
     li.innerHTML = `<span class="no">${pad2(t.no)}</span><canvas aria-hidden="true"></canvas>
-      <span><div class="t">${OC.chordName(t.song.barInfo[0].chord)}</div>
-      <div class="s">${when(t.createdAt)}${t.sessions ? ` · 체험 ${t.sessions}회` : ''}</div></span>
+      <span><div class="t">${t.title || OC.titleFor(t.code)}</div>
+      <div class="s">${OC.chordName(t.song.barInfo[0].chord)} · ${when(t.createdAt)}${t.sessions ? ` · 체험 ${t.sessions}회` : ''}</div></span>
       <span class="d">${OC.fmt(t.song.length)}</span>`;
     cover(li.querySelector('canvas'), t.song);
     li.addEventListener('click', () => select(t));
@@ -233,7 +233,7 @@ $('saveBtn').addEventListener('click', async () => {
 });
 $('qrBtn').addEventListener('click', () => {
   if (!current) return;
-  OC.showQR(current.code, { title: `№ ${pad2(current.no)} — ${OC.chordName(current.song.barInfo[0].chord)}` });
+  OC.showQR(current.code, { title: current.title || OC.titleFor(current.code) });
 });
 
 window.addEventListener('resize', resize);
