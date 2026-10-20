@@ -4,145 +4,121 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Make Chord — Outer Chord</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <style>
+  @font-face{
+    font-family:'Nomark';
+    src: url('../fonts/nomark.otf') format('opentype');
+    font-display: swap;
+  }
   :root{
-    --bg:#191818;
-    --ink:#e8e2d4;
-    --muted:rgba(232,226,212,0.55);
-    --faint:rgba(232,226,212,0.16);
     --red:#b01d12;
+    --ink:#1e1e1e;      /* the vinyl, and the title on the red panel */
+    --ring:#313131;
   }
   *,*::before,*::after{ box-sizing:border-box; }
-  html,body{
-    margin:0; width:100%; height:100%; overflow:hidden;
-    background:var(--bg); color:var(--ink);
-    font-family:'Pretendard Variable', Pretendard, 'Inter', sans-serif;
-    -webkit-font-smoothing:antialiased;
-  }
-  .backdrop{
-    position:fixed; inset:0; pointer-events:none;
-    background:var(--bg) url('../main-assets/background.jpg') center / cover no-repeat;
-    opacity:.45;
-  }
+  html,body{ margin:0; width:100%; height:100%; overflow:hidden; background:#191818;
+    font-family:'Pretendard Variable', Pretendard, sans-serif; -webkit-font-smoothing:antialiased; }
 
-  /* the record, as large as the window allows */
-  .stage{
-    position:fixed; inset:0;
-    display:grid; place-items:center;
-  }
-  canvas{ display:block; }
+  /* The layout is the 2000×1125 design sheet (음원화면, half of its 4000×2250
+     export), drawn at that size and scaled to fit the window; every
+     position below is read straight off it. The backdrop and the red panel
+     reach past the sheet to the window's edges. */
+  .stage{ position:fixed; left:0; top:0; width:2000px; height:1125px; transform-origin:0 0; z-index:2; }
+  .stage > *{ position:absolute; }
 
-  /* ---------- info, top right ---------- */
-  .info{
-    position:fixed; right:clamp(20px, 3vw, 56px); top:clamp(20px, 5vh, 52px);
-    text-align:right; z-index:5;
-    max-width:min(360px, 42vw);
-  }
-  .info h1{
-    margin:0;
-    font-family:'Playfair Display', serif; font-style:italic; font-weight:500;
-    font-size:clamp(22px, 2.2vw, 38px); line-height:1.1;
-  }
-  .info .sub{
-    margin-top:6px; font-size:12px; letter-spacing:.3em; color:var(--muted);
-  }
-  .legend{
-    list-style:none; margin:22px 0 0; padding:0;
-    font-family:'Inter', sans-serif; font-size:12px; line-height:2.05;
-    color:var(--muted);
-  }
-  .legend li{ display:flex; justify-content:flex-end; align-items:center; gap:10px; }
-  .legend .n{ color:var(--ink); min-width:3.2em; text-align:right; font-variant-numeric:tabular-nums; }
-  .legend .dot{ width:8px; height:8px; border-radius:50%; flex:none; }
-  .legend li.off{ opacity:.35; }
-  .stats{
-    margin-top:14px; padding-top:12px; border-top:1px solid var(--faint);
-    font-family:'Inter', sans-serif; font-size:11px; letter-spacing:.08em; color:var(--muted);
-    line-height:1.8;
-  }
+  /* the disc: centre (502, 563), radius 389 — its left half under the panel */
+  #disc{ left:102px; top:163px; width:800px; height:800px; }
+  /* the arm swings about a pivot above the sheet so the needle can ride the groove */
+  /* the tube runs on 200 units above the sheet (assets/tonearm.png is extended), so
+     swinging the arm never brings its cut end into view; it turns about (1110, -150) */
+  #arm{ left:746.5px; top:-200px; width:378.5px; height:702px; transform-origin:363.5px 50px; pointer-events:none; }
 
-  /* ---------- now playing, bottom left ---------- */
-  .now{
-    position:fixed; left:clamp(20px, 3vw, 56px); bottom:clamp(20px, 5vh, 52px);
-    z-index:5; font-family:'Inter', sans-serif;
-  }
-  .now .label{ font-size:11px; letter-spacing:.2em; color:var(--muted); text-transform:uppercase; }
-  .now .chord{
-    margin-top:8px;
-    font-family:'Playfair Display', serif; font-size:clamp(28px, 3.2vw, 54px); line-height:1;
-    min-height:1em;
-  }
-  .now .bar{ margin-top:10px; font-size:11px; letter-spacing:.2em; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .chordbox{ right:1260px; top:280px; text-align:right; color:var(--red); pointer-events:none; }
+  .chordbox .k{ font:700 33px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.01em; }
+  .chordbox .v{ margin-top:10px; font:400 86px/1 'Nomark', 'Pretendard Variable', serif; white-space:nowrap; width:max-content; margin-left:auto; }
 
-  /* ---------- controls, bottom right ---------- */
-  .controls{
-    position:fixed; right:clamp(20px, 3vw, 56px); bottom:clamp(20px, 5vh, 52px);
-    z-index:5; display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;
-    max-width:60vw;
-  }
-  .controls button{
-    appearance:none; border:1px solid var(--ink); background:transparent; color:var(--ink);
-    font:500 12px/1 'Inter', sans-serif; letter-spacing:.16em; text-transform:uppercase;
-    padding:13px 18px; border-radius:999px; cursor:pointer;
-    transition:background .2s steps(3, end), color .2s steps(3, end);
-  }
-  .controls button:hover:not(:disabled),
-  .controls button:focus-visible{ background:var(--ink); color:var(--bg); outline:none; }
-  .controls button.primary{ background:var(--red); border-color:var(--red); color:var(--ink); }
-  .controls button.primary:hover:not(:disabled){ background:var(--ink); border-color:var(--ink); color:var(--bg); }
-  .controls button:disabled{ opacity:.3; cursor:default; }
+  .round{ width:81px; height:81px; margin:0; padding:0; border-radius:50%; cursor:pointer;
+    border:2px solid var(--red); background:var(--ink); color:var(--red);
+    display:grid; place-items:center; transition:background .15s steps(2,end), color .15s steps(2,end); }
+  .round svg{ width:34px; height:34px; fill:currentColor; }
+  .round:hover:not(:disabled), .round:focus-visible, .round.is-on{ background:var(--red); color:var(--ink); outline:none; }
+  .round:disabled{ opacity:.35; cursor:default; }
+  #playBtn{ left:745.5px; top:800.5px; }
+  #pauseBtn{ left:638.5px; top:877.5px; }
 
-  .message{
-    position:fixed; left:50%; top:50%; transform:translate(-50%,-50%);
-    z-index:6; text-align:center; max-width:80vw;
-    font-size:15px; line-height:1.9; color:var(--ink);
-    background:rgba(25,24,24,.82); padding:22px 30px; border-radius:6px;
-  }
+  /* the red panel; its left edge and height are stretched to the window in JS */
+  .panel{ left:0; top:0; width:502px; height:1125px; background:var(--red); z-index:3; }
+  /* 125px Nomark at -35 tracking is the sheet's SONG / TITLE exactly: caps 90 tall,
+     baselines 125 apart, the last one at y=1025 */
+  .title{ left:113px; bottom:82px; width:370px; z-index:4; margin:0; color:var(--ink); letter-spacing:-.035em;
+    font:400 125px/125px 'Nomark', 'Pretendard Variable', serif; text-transform:uppercase; }
+  .title span{ display:block; width:max-content; white-space:nowrap; }
+
+  #logo{ left:1499.5px; top:172px; width:369px; height:249.5px; pointer-events:none; }
+
+  .pill{ right:134px; height:61px; padding:0 32px; border:2px solid var(--red); border-radius:999px;
+    background:transparent; color:var(--red); cursor:pointer;
+    font:500 21px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.02em;
+    transition:background .15s steps(2,end), color .15s steps(2,end); }
+  .pill:hover:not(:disabled), .pill:focus-visible{ background:var(--red); color:var(--ink); outline:none; }
+  .pill:disabled{ opacity:.35; cursor:default; }
+  #archiveBtn{ top:446px; width:278px; }
+  #remakeBtn{ top:529px; width:157px; padding:0; }
+  #qrBtn{ top:606px; width:157px; padding:0; }
+
+  /* where the sounds came from, and how many */
+  .src{ display:flex; justify-content:space-between; align-items:center; height:40px; color:var(--red); pointer-events:none; }
+  .src .n{ font:500 28px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.03em; }
+  .src .c{ font:300 28px/1 'Pretendard Variable', Pretendard, sans-serif; font-variant-numeric:tabular-nums; }
+  .src.off{ opacity:.45; }
+  .src.l{ left:1002px; width:318px; }
+  .src.r{ left:1457px; width:411px; }
+
+  .status{ right:132px; top:1050px; color:var(--red); opacity:.7; pointer-events:none;
+    font:400 16px/1.4 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.01em; text-align:right; }
+
+  .message{ left:1000px; top:520px; width:760px; transform:translate(-50%,-50%); z-index:6; text-align:center;
+    font:500 30px/1.7 'Pretendard Variable', Pretendard, sans-serif; color:#e8e2d4;
+    background:rgba(25,24,24,.86); padding:34px 44px; border-radius:8px; white-space:pre-line; }
   .message[hidden]{ display:none; }
 
-  @media (max-width: 720px){
-    .info{ max-width:60vw; }
-    .legend{ font-size:11px; }
-    .controls{ left:16px; right:16px; max-width:none; justify-content:center; }
-    .now{ bottom:auto; top:auto; left:16px; bottom:96px; }
-  }
+  /* calibration: ?guide lays the design export over the page */
+  .guide{ left:0; top:0; width:2000px; height:1125px; opacity:.45; pointer-events:none; z-index:9; }
 </style>
 </head>
 <body>
 
-<div class="backdrop" aria-hidden="true"></div>
+<main class="stage" id="stage">
+  <canvas id="disc" aria-label="지금까지 모인 소리로 만든 음악의 레코드"></canvas>
+  <img id="arm" src="assets/tonearm.png" alt="">
 
-<div class="stage"><canvas id="record" aria-label="지금까지 모인 소리로 만든 음악의 레코드"></canvas></div>
+  <div class="chordbox" aria-live="polite"><div class="k">CHORD</div><div class="v" id="chordName">—</div></div>
+  <button class="round" id="pauseBtn" type="button" aria-label="일시정지" disabled>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx=".5"/><rect x="14" y="5" width="4" height="14" rx=".5"/></svg>
+  </button>
+  <button class="round" id="playBtn" type="button" aria-label="재생" disabled>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>
+  </button>
 
-<aside class="info">
-  <h1>Make Chord</h1>
-  <div class="sub">성간 미아를 위한 불협화음</div>
-  <ul class="legend" id="legend"></ul>
-  <div class="stats" id="stats">소리를 모으는 중…</div>
-</aside>
+  <div class="panel" id="panel"></div>
+  <h1 class="title" id="title" aria-live="polite"><span>Outer</span><span>Chord</span></h1>
 
-<div class="now" aria-live="polite">
-  <div class="label">Chord</div>
-  <div class="chord" id="chordName">—</div>
-  <div class="bar" id="barCount"></div>
-</div>
+  <img id="logo" src="assets/logo.png" alt="OUTER CHORD — 성간 미아를 위한 불협화음">
 
-<div class="controls">
-  <button type="button" class="primary" id="playBtn" disabled>▶ 재생</button>
-  <button type="button" id="remakeBtn" disabled>↻ 다시 만들기</button>
-  <button type="button" id="saveBtn" disabled>⤓ WAV 저장</button>
-  <button type="button" id="qrBtn" disabled>▦ QR로 받기</button>
-  <button type="button" id="archiveBtn" disabled>≡ 아카이브</button>
-</div>
+  <button class="pill" id="archiveBtn" type="button" disabled>아카이브 및 저장소로 이동</button>
+  <button class="pill" id="remakeBtn" type="button" disabled>다시 만들기</button>
+  <button class="pill" id="qrBtn" type="button" disabled>QR로 받기</button>
 
-<div class="message" id="message" hidden></div>
+  <div id="sources"></div>
+  <div class="status" id="status">소리를 모으는 중…</div>
+  <div class="message" id="message" hidden></div>
+</main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="../shared/outer-chord.js"></script>
-
+<script src="../shared/backdrop.js"></script>
 <script>
 (function(){
 'use strict';
@@ -212,6 +188,24 @@ const NORMALIZE = {
     if (e.type === 'flood') return hit('tenshi', time, 'wash', .45, pan, sess);
     return e.type ? hit('tenshi', time, 'tick', .35, pan, sess) : null;
   },
+  // Passacaglia: every note a visitor paints onto a wall (c3/sound-log.js)
+  c3(e){
+    if (!(e.f > 0)) return null;
+    return tone('c3', num(e.t, 0), hz2midi(e.f), .6, .6, null, e.s || e.session);
+  },
+  // OUTER CHORD: only what the visitor plays — a click held down, a sweep of
+  // the pointer across the scale, the beam swung. The stars' twinkles and
+  // the ring's ticks play by themselves and are left out.
+  outerchord(e){
+    const time = num(e.t, Date.parse(e.rt) || 0), sess = 'oc';
+    const pan = e.x != null ? clamp((e.x > 1.5 ? e.x / 100 : e.x) * 2 - 1, -1, 1) : null;
+    switch (e.type) {
+      case 'click': return e.freq > 0 ? tone('outerchord', time, hz2midi(e.freq), num(e.duration, .5), .75, pan, sess) : null;
+      case 'hover': return e.freq > 0 ? tone('outerchord', time, hz2midi(e.freq), .25, .35, pan, sess) : null;
+      case 'beam-whoosh': return hit('outerchord', time, 'wash', .5, pan, sess);
+    }
+    return null;
+  },
 };
 
 /* The server copy is the whole archive, so it wins whenever it answers.
@@ -260,6 +254,15 @@ const LOADERS = {
     } catch (_) {}
     const store = local('tenshi.memory.v1');
     return { from: 'local', raw: (store && store.sessions) || [], grouped: true };
+  },
+  async c3(){
+    if (onServer) try { return { from: 'server', raw: JSON.parse(await getJSON('../c3/api/sounds')) }; } catch (_) {}
+    return { from: 'local', raw: local('passacaglia.soundmem') || [] };
+  },
+  async outerchord(){
+    // the piece keeps no copy in the browser; without the server there is nothing to read
+    if (onServer) try { return { from: 'server', raw: JSON.parse(await getJSON('../outerchord/api/sound-log')) }; } catch (_) {}
+    return { from: 'local', raw: [] };
   },
 };
 
@@ -364,37 +367,106 @@ function compose(events, seed){
 }
 
 /* =====================================================================
-   3. The record
+   3. The sheet: fitting the 2000×1125 design to the window
    ===================================================================== */
-const canvas = document.getElementById('record');
-const g2 = canvas.getContext('2d');
-let R = 100, dpr = 1;
+const $ = id => document.getElementById(id);
+const stage = $('stage'), panel = $('panel');
+const DESIGN_W = 2000, DESIGN_H = 1125;
+let S = 1;                       // window px per design unit
 
-function resize(){
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const size = Math.floor(Math.min(window.innerWidth * .62, window.innerHeight * .84));
-  R = size / 2;
-  canvas.style.width = canvas.style.height = size + 'px';
-  canvas.width = canvas.height = Math.floor(size * dpr);
-  draw();
-}
-
-function draw(){
-  const size = canvas.width / dpr;
-  g2.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g2.clearRect(0, 0, size, size);
-  // the arm reaches in from outside the disc, so the disc sits a touch in
-  OC.drawRecord(g2, size / 2, size / 2, R, song, player && player.playing ? player.time() : -1,
-                { spin: idleSpin, tonearm: true, restAlpha: .32 });
+function fit(){
+  const vw = window.innerWidth, vh = window.innerHeight;
+  S = Math.min(vw / DESIGN_W, vh / DESIGN_H);
+  const ox = (vw - DESIGN_W * S) / 2, oy = (vh - DESIGN_H * S) / 2;
+  stage.style.transform = `translate(${ox}px, ${oy}px) scale(${S})`;
+  // the red panel runs to the window's left edge and its full height
+  panel.style.left = (-ox / S) + 'px';
+  panel.style.width = (502 + ox / S) + 'px';
+  panel.style.top = (-oy / S) + 'px';
+  panel.style.height = (DESIGN_H + 2 * oy / S) + 'px';
+  sizeDisc();
+  fitTitle();
 }
 
 /* =====================================================================
-   4. Page
+   4. The disc and the arm
+   The disc is drawn by the shared record (shared/outer-chord.js): every
+   melody note an arc along the spiral groove in its piece's colour. The arm
+   is the designed picture, swung about a pivot above the sheet so its
+   needle rides the groove inward as the song plays; the disc turns so what
+   is sounding sits right under that needle.
    ===================================================================== */
-const $ = id => document.getElementById(id);
-const playBtn = $('playBtn'), remakeBtn = $('remakeBtn'), saveBtn = $('saveBtn'),
+const disc = $('disc'), g2 = disc.getContext('2d'), arm = $('arm');
+const C = { x: 502, y: 563 }, R = 389;          // disc centre and radius, design units
+const DISC_BOX = { x: 102, y: 163, size: 800 }; // the canvas' place on the sheet
+const PIVOT = { x: 1110, y: -150 };             // where the arm turns
+const TIP0 = { x: 877, y: 500 };                // the needle's point at rest (θ = 0)
+let dpr = 1;
+
+function sizeDisc(){
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const px = Math.round(DISC_BOX.size * S * dpr);
+  disc.width = disc.height = Math.max(2, px);
+}
+
+// the needle's point with the arm turned by θ (radians, clockwise on screen)
+function tipAt(theta){
+  const dx = TIP0.x - PIVOT.x, dy = TIP0.y - PIVOT.y, c = Math.cos(theta), s = Math.sin(theta);
+  return { x: PIVOT.x + dx * c - dy * s, y: PIVOT.y + dx * s + dy * c };
+}
+const reach = theta => { const t = tipAt(theta); return Math.hypot(t.x - C.x, t.y - C.y); };
+
+/* An arm on a pivot can only swing its needle so far in: the closest it
+   gets to the centre is where its arc passes nearest it. The groove is laid
+   out over the stretch the needle can actually cover — from just inside
+   the rest position to a little short of that closest point — so the line
+   that is sounding is always the one under the needle, as on a real
+   record, and the inside of the disc is left plain like a run-out. */
+let THETA_IN = 0, REACH_MIN = Infinity;
+for (let th = 0; th <= 1.6; th += .001) { const d = reach(th); if (d < REACH_MIN) { REACH_MIN = d; THETA_IN = th; } }
+const OUTER = .94;                               // the groove band, as fractions of R
+const INNER = Math.max(.36, (REACH_MIN + 6) / R);
+
+// the turn that puts the needle `r` from the centre (reach falls steadily up to THETA_IN)
+function thetaFor(r){
+  let lo = 0, hi = THETA_IN;
+  for (let i = 0; i < 28; i++) { const m = (lo + hi) / 2; if (reach(m) > r) lo = m; else hi = m; }
+  return (lo + hi) / 2;
+}
+
+let armTheta = 0;
+function draw(){
+  const now = player && player.playing ? player.time() : (player && player.time() > 0 ? player.time() : -1);
+  const live = now >= 0 && song;
+  // needle radius: resting just outside the groove, or riding it while a song is under way
+  let r = reach(0);
+  if (live) {
+    const band = (OUTER - INNER) * R / song.bars;
+    r = Math.max(INNER * R, OUTER * R - (Math.min(now, song.length) / BAR) * band);
+  }
+  const target = live ? thetaFor(r) : 0;
+  armTheta += (target - armTheta) * (live ? .35 : .12);
+  arm.style.transform = `rotate(${armTheta}rad)`;
+  const tip = tipAt(armTheta);
+
+  const k = S * dpr, size = DISC_BOX.size;
+  g2.setTransform(k, 0, 0, k, 0, 0);
+  g2.clearRect(0, 0, size, size);
+  OC.drawRecord(g2, C.x - DISC_BOX.x, C.y - DISC_BOX.y, R, song, live ? now : -1, {
+    spin: idleSpin, tonearm: false, restAlpha: .42,
+    vinyl: '#1e1e1e', labelColor: '#b01d12', ringColor: '#313131',
+    labelR: 108.5 / R, ringR: 131.5 / R, labelText: false, spindle: false,
+    grooveOuter: OUTER, grooveInner: INNER,
+    needleAngle: Math.atan2(tip.y - C.y, tip.x - C.x),
+  });
+}
+
+/* =====================================================================
+   5. Page
+   ===================================================================== */
+const playBtn = $('playBtn'), pauseBtn = $('pauseBtn'), remakeBtn = $('remakeBtn'),
       qrBtn = $('qrBtn'), archiveBtn = $('archiveBtn');
-let events = [], compact = null, song = null, code = '', seed = 1, player = null, idleSpin = 0;
+let events = [], compact = null, song = null, code = '', title = '', seed = 1, player = null, idleSpin = 0;
 let sourceInfo = {};
 
 // one archive entry per visit to this page: remaking replaces it
@@ -403,46 +475,82 @@ const createdAt = new Date().toISOString();
 
 function showMessage(text){ const m = $('message'); m.textContent = text; m.hidden = !text; }
 
-function renderLegend(info){
-  $('legend').innerHTML = ORDER.map(k => {
-    const c = info[k] ? info[k].count : 0;
-    return `<li class="${c ? '' : 'off'}"><span>${SOURCES[k].name}</span><span class="n">${c}</span><span class="dot" style="background:${SOURCES[k].color}"></span></li>`;
+// the list as it is laid out on the sheet: two columns, the right one
+// starting a row lower; y is each row's middle
+const SOURCE_LAYOUT = [
+  { key: 'cattle',     col: 'l', y: 663 }, { key: 'imnota', col: 'l', y: 733 },
+  { key: 'd',          col: 'l', y: 803 }, { key: 'c3',     col: 'l', y: 873 },
+  { key: 'e',          col: 'r', y: 873 }, { key: 'tenshi', col: 'r', y: 942 },
+  { key: 'outerchord', col: 'r', y: 1012 },
+];
+function renderSources(info){
+  $('sources').innerHTML = SOURCE_LAYOUT.map(({ key, col, y }) => {
+    const c = info[key] ? info[key].count : 0;
+    return `<div class="src ${col}${c ? '' : ' off'}" style="position:absolute; top:${y - 20}px">` +
+           `<span class="n">${SOURCES[key].name}</span><span class="c">${c.toLocaleString()}</span></div>`;
   }).join('');
 }
 
-function renderStats(info){
-  const sessions = new Set(events.map(e => e.src + ':' + e.sess)).size;
+function renderStatus(info){
   const froms = [...new Set(Object.values(info).map(i => i.from))];
   const where = froms.includes('server') ? '전시 서버 기록' : '이 브라우저 기록';
-  $('stats').innerHTML = `소리 ${events.length.toLocaleString()}개 · 체험 ${sessions}회<br>` +
-    (song ? `${song.bars}마디 · ${BPM} BPM · ${OC.fmt(song.length)}` : '') + `<br>${where}`;
+  $('status').textContent = song
+    ? `소리 ${events.length.toLocaleString()}개 · ${song.bars}마디 · ${BPM} BPM · ${OC.fmt(song.length)} · ${where}`
+    : where;
+}
+
+// Nomark at the sheet's size, brought down until the longest word fits the panel
+function fitTitle(){
+  const el = $('title');
+  // 125px at -35 tracking is the sheet's SONG / TITLE exactly: caps 90 tall,
+  // baselines 125 apart, the last one at y = 1025
+  let size = 125;
+  el.style.fontSize = size + 'px';
+  el.style.lineHeight = size + 'px';
+  const widest = () => Math.max(...[...el.children].map(s => s.scrollWidth));
+  while (size > 56 && widest() > 360) { size -= 3; el.style.fontSize = size + 'px'; el.style.lineHeight = size + 'px'; }
+}
+function setTitle(text){
+  $('title').innerHTML = text.split(' ').map(w => `<span>${w}</span>`).join('');
+  $('title').setAttribute('aria-label', '곡 제목: ' + text);
+  fitTitle();
 }
 
 function setNow(){
   if (!song) return;
-  const t = player && player.playing ? player.time() : 0;
+  const t = player ? player.time() : 0;
   const b = clamp(Math.floor(t / BAR), 0, song.bars - 1);
-  $('chordName').textContent = OC.chordName(song.barInfo[b].chord);
-  $('barCount').textContent = `${String(b + 1).padStart(2, '0')} / ${String(song.bars).padStart(2, '0')}`;
+  const text = song.barInfo[b].chord.map(pc => NAMES[pc]).join(' ');
+  const el = $('chordName');
+  if (el.textContent === text) return;
+  el.textContent = text;
+  // right-aligned at x=740 as on the sheet; a long one (sharps and flats are
+  // wide) is set smaller rather than run in under the red panel
+  let size = 86;
+  el.style.fontSize = size + 'px';
+  while (size > 40 && el.scrollWidth > 225) { size -= 4; el.style.fontSize = size + 'px'; }
 }
 
-function fileName(){
-  return `outer-chord-${createdAt.slice(0, 16).replace(/[:T-]/g, '')}.wav`;
+function setButtons(){
+  const on = player && player.playing;
+  playBtn.classList.toggle('is-on', !!on);
+  pauseBtn.classList.toggle('is-on', !on && player && player.time() > 0);
 }
 
 async function make(){
   compact = compose(events, seed);
   song = OC.expand(compact);
-  if (player) player.stop();
-  player = OC.player(song, () => { playBtn.textContent = '▶ 재생'; });
+  if (player) player.halt();
+  player = OC.player(song, setButtons);
   setNow();
-  draw();
   code = await OC.encode(compact);
+  title = OC.titleFor(code);
+  setTitle(title);
   // keep it in the archive (this visit's entry; a remake overwrites it)
   const counts = {};
   for (const k of ORDER) counts[k] = sourceInfo[k] ? sourceInfo[k].count : 0;
   OC.saveSong({
-    id: visitId, createdAt, code,
+    id: visitId, createdAt, code, title,
     bars: song.bars, length: +song.length.toFixed(2),
     chord: OC.chordName(song.barInfo[0].chord),
     counts, sounds: events.length,
@@ -450,42 +558,25 @@ async function make(){
   });
 }
 
-function play(){ player.play(); playBtn.textContent = '■ 정지'; }
-function stop(){ if (player) player.stop(); playBtn.textContent = '▶ 재생'; setNow(); draw(); }
-
-playBtn.addEventListener('click', () => (player.playing ? stop() : play()));
+playBtn.addEventListener('click', () => { if (player && !player.playing) player.play(); setButtons(); });
+pauseBtn.addEventListener('click', () => { if (player) player.pause(); setButtons(); });
 remakeBtn.addEventListener('click', async () => {
   const was = player && player.playing;
-  stop();
+  if (player) player.halt();
   seed = (Math.random() * 2 ** 31) | 0;
   await make();
-  if (was) play();
+  if (was) player.play();
+  setButtons();
 });
-
-// render the same schedule offline and hand it over as a 16-bit WAV
-saveBtn.addEventListener('click', async () => {
-  saveBtn.disabled = true;
-  const label = saveBtn.textContent;
-  saveBtn.textContent = '만드는 중…';
-  try {
-    OC.download(await OC.renderWav(song), fileName());
-  } catch (err) {
-    showMessage('파일을 만들지 못했습니다: ' + err.message);
-    setTimeout(() => showMessage(''), 3000);
-  }
-  saveBtn.textContent = label;
-  saveBtn.disabled = false;
-});
-
 // the song, packed into a code, rides in a QR code to the visitor's phone
 qrBtn.addEventListener('click', () => {
   if (!code) return;
-  try { OC.showQR(code, { title: `${OC.chordName(song.barInfo[0].chord)} — ${OC.fmt(song.length)}` }); }
+  try { OC.showQR(code, { title }); }
   catch (err) { showMessage('QR 코드를 만들지 못했습니다: ' + err.message); setTimeout(() => showMessage(''), 3000); }
 });
 archiveBtn.addEventListener('click', () => { location.href = '../records/index.html'; });
 
-/* The record turns on the same kind of hand-cranked clock as the index:
+/* The disc turns on the same kind of hand-cranked clock as the index:
    frames held for a slightly different time each, around 24 a second. */
 let nextFrame = 0;
 function loop(ts){
@@ -498,14 +589,23 @@ function loop(ts){
   requestAnimationFrame(loop);
 }
 
-window.addEventListener('resize', resize);
-resize();
+// a handle for checking the page from the console: draw a frame, read the arm
+window.__chord = { draw, setNow, get player() { return player; }, get song() { return song; },
+                   get title() { return title; }, get armTheta() { return armTheta; }, reach, thetaFor };
+
+XGBackdrop.mount({ root: '../', logo: $('logo') });
+if (/[?&]guide\b/.test(location.search)) {
+  const gimg = document.createElement('img'); gimg.className = 'guide'; gimg.src = 'assets/_guide.png'; stage.appendChild(gimg);
+}
+window.addEventListener('resize', fit);
+fit();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitle);
 requestAnimationFrame(loop);
 
 /* Once the song is made the archive has done its job: everything collected
    is cleared so the index starts over from nothing — no record at the
    bottom, no sounds waiting — for the next person. The song itself stays in
-   this page, so it can still be played, remade and saved from here, and it
+   this page, so it can still be played, remade and sent from here, and it
    is kept in the song archive (records/).
    On the server nothing is lost: the files move to archive/<time>/. */
 const LOCAL_KEYS = [
@@ -514,6 +614,7 @@ const LOCAL_KEYS = [
   'noctiluca.soundlog.v1', 'noctiluca.soundqueue.v1',
   'notalien.soundmem', 'notalien.soundmem.pending',
   'tenshi.memory.v1',
+  'passacaglia.soundmem',
 ];
 async function resetAll(){
   let archived = null;
@@ -532,25 +633,23 @@ async function resetAll(){
   const { events: evs, info } = await collect();
   events = evs;
   sourceInfo = info;
-  renderLegend(info);
+  renderSources(info);
   if (!events.length) {
     await resetAll();
-    renderStats(info);
+    renderStatus(info);
     showMessage('아직 모인 소리가 없습니다.\n작품을 체험한 뒤 다시 와 주세요.');
-    $('message').style.whiteSpace = 'pre-line';
     archiveBtn.disabled = false;
     return;
   }
   seed = (Math.random() * 2 ** 31) | 0;
   await make();
-  renderStats(info);
-  [playBtn, remakeBtn, saveBtn, qrBtn, archiveBtn].forEach(b => (b.disabled = false));
+  renderStatus(info);
+  [playBtn, pauseBtn, remakeBtn, qrBtn, archiveBtn].forEach(b => (b.disabled = false));
   await resetAll();
-  $('stats').insertAdjacentHTML('beforeend', '<br>이 곡을 만든 소리는 비워졌습니다');
 })();
 
 })();
 </script>
-<script src="../shared/back.js" data-visit="0" data-color="#e8e2d4"></script>
+<script src="../shared/back.js" data-visit="0" data-color="#1e1e1e"></script>
 </body>
 </html>

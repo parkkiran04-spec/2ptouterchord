@@ -18,12 +18,16 @@
   'use strict';
 
   /* ---------------- constants ---------------- */
+  // The order is part of the song code (each melody note stores its
+  // source's index), so new pieces only ever go on the end.
   const SOURCES = {
-    cattle: { name: 'Cattle Mutilation',          color: '#e0442c' },
-    e:      { name: 'The Sound of Not the Earth', color: '#7cc9a4' },
-    d:      { name: 'Noctiluca',                  color: '#2fb3c2' },
-    imnota: { name: "I'm Not an Alien",           color: '#7f95ff' },
-    tenshi: { name: 'Tenshi no Tsubasa',          color: '#f0ead8' },
+    cattle:     { name: 'Cattle Mutilation',          color: '#e0442c' },
+    e:          { name: 'The Sound of not the Earth', color: '#7cc9a4' },
+    d:          { name: 'Noctiluca',                  color: '#2fb3c2' },
+    imnota:     { name: "I'm not an Alien",           color: '#b4a6de' },
+    tenshi:     { name: 'Tenshi no Tsubasa',          color: '#f0ead8' },
+    c3:         { name: 'Passacaglia',                color: '#e84175' },
+    outerchord: { name: 'OUTER CHORD',                color: '#4c948e' },
   };
   const ORDER = Object.keys(SOURCES);
   const KINDS = ['kick', 'tick', 'wash'];
@@ -254,6 +258,29 @@
       lfo.connect(depth); depth.connect(a.frequency); depth.connect(b.frequency);
       lfo.start(t); lfo.stop(end);
     },
+    // Passacaglia: a plucked, harpsichord-like tone — a bright square with
+    // a fast-closing filter and a quieter octave above
+    c3(ctx, g, n, t) {
+      const env = outlet(ctx, g, n.pan, .35);
+      const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = 2;
+      lp.frequency.setValueAtTime(5200, t); lp.frequency.exponentialRampToValueAtTime(900, t + .35);
+      lp.connect(env);
+      const end = adsr(env.gain, t, .01, .07 * n.vel, .002, Math.max(.5, n.dur * .9));
+      osc(ctx, 'square', m2f(n.midi), t, end, lp);
+      const h = ctx.createGain(); h.gain.value = .35; h.connect(lp);
+      osc(ctx, 'sawtooth', m2f(n.midi + 12), t, end, h, 3);
+    },
+    // OUTER CHORD: a glassy sine with a slow shimmer, the beam's hum
+    outerchord(ctx, g, n, t) {
+      const env = outlet(ctx, g, n.pan, .75);
+      const end = adsr(env.gain, t, n.dur, .11 * n.vel, .05, 1.4);
+      const f = m2f(n.midi);
+      osc(ctx, 'sine', f, t, end, env);
+      const h = ctx.createGain(); h.gain.value = .22; h.connect(env);
+      osc(ctx, 'sine', f * 2.01, t, end, h);
+      const s = ctx.createGain(); s.gain.value = .08; s.connect(env);
+      osc(ctx, 'triangle', f * 3, t, end, s, -6);
+    },
   };
   const DRUMS = {
     kick(ctx, g, d, t) {
@@ -277,28 +304,41 @@
       const s = ctx.createBufferSource(); s.buffer = g.noise; s.loop = true; s.connect(bp); s.start(t); s.stop(end);
     },
   };
-  function schedule(ctx, song, at) {
+  // `from` seconds into the song: notes that start earlier are skipped, the
+  // rest keep their places relative to it (used to resume after a pause)
+  function schedule(ctx, song, at, from) {
+    from = from || 0;
     const g = buildGraph(ctx);
-    for (const n of song.notes) (VOICES[n.voice] || VOICES.d)(ctx, g, n, at + n.t);
-    for (const d of song.drums) DRUMS[d.kind](ctx, g, d, at + d.t);
+    for (const n of song.notes) if (n.t >= from - 1e-6) (VOICES[n.voice] || VOICES.d)(ctx, g, n, at + n.t - from);
+    for (const d of song.drums) if (d.t >= from - 1e-6) DRUMS[d.kind](ctx, g, d, at + d.t - from);
   }
 
-  // A player that can be started and stopped; time() is seconds into the song.
+  // A player that can be started, paused and stopped; time() is seconds
+  // into the song. play() picks up where pause() left off.
   function player(song, onEnd) {
-    let ac = null, startAt = 0, timer = 0;
+    let ac = null, startAt = 0, offset = 0, timer = 0;
     const self = {
       playing: false,
-      time: () => (ac ? Math.max(0, ac.currentTime - startAt) : 0),
+      time: () => (ac ? Math.max(0, offset + ac.currentTime - startAt) : offset),
       play() {
-        self.stop();
+        if (offset >= song.length) offset = 0;
+        const from = offset;
+        self.halt();
         const AC = window.AudioContext || window.webkitAudioContext;
         ac = new AC();
         startAt = ac.currentTime + .15;
-        schedule(ac, song, startAt);
+        offset = from;
+        schedule(ac, song, startAt, from);
         self.playing = true;
-        timer = setTimeout(() => { self.stop(); if (onEnd) onEnd(); }, (song.length + song.tail + .3) * 1000);
+        timer = setTimeout(() => { self.stop(); if (onEnd) onEnd(); }, (song.length + song.tail - from + .3) * 1000);
       },
-      stop() {
+      pause() {
+        if (!self.playing) return;
+        offset = self.time();
+        self.halt();
+      },
+      stop() { self.halt(); offset = 0; },
+      halt() {
         clearTimeout(timer);
         if (ac) { try { ac.close(); } catch (e) { /* already closed */ } ac = null; }
         self.playing = false;
@@ -350,10 +390,16 @@
   function drawRecord(ctx, cx, cy, R, song, now, opt) {
     opt = opt || {};
     const bars = song ? song.bars : 16;
-    const band = (OUTER - INNER) * R / bars;
+    // the groove band can be narrowed (grooveOuter / grooveInner, fractions of R)
+    // to match how far a page's tonearm can actually reach
+    const GO = opt.grooveOuter || OUTER, GI = opt.grooveInner || INNER;
+    const band = (GO - GI) * R / bars;
     const playingNow = now != null && now >= 0;
     const frac = playingNow ? (now / BAR) % 1 : 0;
-    const rot = NEEDLE + 2 * Math.PI * frac + (playingNow ? 0 : (opt.spin || 0));
+    // where the needle touches the disc (screen angle); what is playing is
+    // turned to sit right under it
+    const needle = opt.needleAngle != null ? opt.needleAngle : NEEDLE;
+    const rot = needle + 2 * Math.PI * frac + (playingNow ? 0 : (opt.spin || 0));
 
     ctx.save();
     ctx.translate(cx, cy);
@@ -362,7 +408,7 @@
     ctx.lineWidth = Math.max(.5, R / 400);
     if (R > 60) {
       for (let b = 0; b <= bars; b++) {
-        ctx.beginPath(); ctx.arc(0, 0, OUTER * R - b * band, 0, Math.PI * 2);
+        ctx.beginPath(); ctx.arc(0, 0, GO * R - b * band, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(232,226,212,0.07)'; ctx.stroke();
       }
     }
@@ -377,7 +423,7 @@
         const b = Math.floor(n.t / BAR + 1e-6);
         const s = (n.t - b * BAR) / BAR;
         const len = Math.min(n.dur / BAR, 1 - s);
-        const r = OUTER * R - b * band - band * (.15 + .7 * (1 - (n.midi - 55) / 33));
+        const r = GO * R - b * band - band * (.15 + .7 * (1 - (n.midi - 55) / 33));
         const a0 = -s * 2 * Math.PI, a1 = -(s + Math.max(len, .012)) * 2 * Math.PI;
         const played = playingNow && now >= n.t, sounding = played && now < n.t + n.dur;
         ctx.beginPath(); ctx.arc(0, 0, r, a1, a0);
@@ -389,8 +435,11 @@
       ctx.globalAlpha = 1;
     }
 
-    // label
-    ctx.beginPath(); ctx.arc(0, 0, INNER * R * .86, 0, Math.PI * 2); ctx.fillStyle = opt.labelColor || '#b01d12'; ctx.fill();
+    // label, optionally sitting in a plain ring (radii as fractions of R)
+    if (opt.ringColor) {
+      ctx.beginPath(); ctx.arc(0, 0, (opt.ringR || INNER * .95) * R, 0, Math.PI * 2); ctx.fillStyle = opt.ringColor; ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(0, 0, (opt.labelR || INNER * .86) * R, 0, Math.PI * 2); ctx.fillStyle = opt.labelColor || '#b01d12'; ctx.fill();
     if (opt.labelText !== false && R > 60) {
       ctx.fillStyle = '#e8e2d4';
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -399,11 +448,13 @@
       ctx.fillText(lines[0], 0, -R * .045);
       ctx.fillText(lines[1], 0, R * .05);
     }
-    ctx.beginPath(); ctx.arc(0, 0, Math.max(1.5, R * .018), 0, Math.PI * 2); ctx.fillStyle = opt.vinyl || '#0c0c0c'; ctx.fill();
+    if (opt.spindle !== false) {
+      ctx.beginPath(); ctx.arc(0, 0, Math.max(1.5, R * .018), 0, Math.PI * 2); ctx.fillStyle = opt.vinyl || '#0c0c0c'; ctx.fill();
+    }
     ctx.restore();
 
     if (opt.tonearm) {
-      const rr = playingNow ? OUTER * R - (now / BAR) * band : R * 1.02;
+      const rr = playingNow ? GO * R - (now / BAR) * band : R * 1.02;
       const tipX = cx + Math.cos(NEEDLE) * rr, tipY = cy + Math.sin(NEEDLE) * rr;
       const pivX = cx + R * 1.02, pivY = cy - R * 1.02;
       const armColor = opt.armColor || '#e8e2d4';
@@ -413,6 +464,25 @@
       ctx.beginPath(); ctx.arc(pivX, pivY, R * .04, 0, Math.PI * 2); ctx.fillStyle = armColor; ctx.fill();
       ctx.beginPath(); ctx.arc(tipX, tipY, R * .016, 0, Math.PI * 2); ctx.fillStyle = '#b01d12'; ctx.fill();
     }
+  }
+
+  /* ---------------- a title for every song ----------------
+     Two words, in the voice of the exhibition (lost signals, stray angels,
+     cattle under a beam), picked from the song's own code — so one song
+     keeps one title wherever it is opened: here, the archive, the phone. */
+  const TITLE_A = ['LOST', 'STRAY', 'HOLLOW', 'DISTANT', 'SILENT', 'BROKEN', 'FALLEN', 'OUTER', 'PALE', 'STATIC',
+    'ORBITAL', 'DROWNED', 'WANDERING', 'FORGOTTEN', 'MIDNIGHT', 'NEON', 'FAINT', 'LAST', 'TENDER', 'SPLIT',
+    'SECOND', 'COLD', 'FLOATING', 'BURIED', 'ELECTRIC', 'UNKNOWN', 'GHOST', 'VELVET', 'CRIMSON', 'GLASS'];
+  const TITLE_B = ['SIGNAL', 'CHORD', 'ORBIT', 'ECHO', 'COMET', 'NEBULA', 'ANGEL', 'CATTLE', 'RECORD', 'PULSE',
+    'HYMN', 'DRIFT', 'LULLABY', 'BEACON', 'PLANET', 'WING', 'GROOVE', 'TIDE', 'STAR', 'SATELLITE',
+    'NOCTURNE', 'RIPPLE', 'HALO', 'FREQUENCY', 'DUST', 'CANON', 'REQUIEM', 'MERIDIAN', 'APHELION', 'CHORUS'];
+  function titleFor(code) {
+    let h = 0x811c9dc5;                                  // FNV-1a over the code
+    for (let i = 0; i < code.length; i++) { h ^= code.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+    const a = TITLE_A[h % TITLE_A.length];
+    let b = TITLE_B[(h >>> 8) % TITLE_B.length];
+    if (b === a) b = TITLE_B[((h >>> 8) + 1) % TITLE_B.length];
+    return a + ' ' + b;
   }
 
   /* ---------------- the phone link and its QR code ---------------- */
@@ -514,7 +584,7 @@
     clamp, fold, fmt, chordName, q7, qPan, qHit,
     expand, encode, decode, pack, unpack,
     schedule, player, renderWav, toWav, download,
-    drawRecord, qrSvg, showQR, listenPrefix, siteRoot,
+    drawRecord, qrSvg, showQR, listenPrefix, siteRoot, titleFor,
     saveSong, listSongs,
   };
 })();

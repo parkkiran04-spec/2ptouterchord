@@ -27,7 +27,8 @@
   .logo{ width:min(62vw, 260px); height:auto; margin-top:6px; }
   .kicker{ font:500 11px/1 'Inter', sans-serif; letter-spacing:.24em; color:var(--muted); text-transform:uppercase; }
   canvas{ display:block; width:min(86vw, 52svh, 420px); aspect-ratio:1; }
-  .title{ margin:0; font:italic 500 clamp(26px, 8vw, 38px)/1.1 'Playfair Display', serif; }
+  @font-face{ font-family:'Nomark'; src:url('../fonts/nomark.otf') format('opentype'); font-display:swap; }
+  .title{ margin:0; font:400 clamp(34px, 11vw, 56px)/1 'Nomark', 'Playfair Display', serif; letter-spacing:-.035em; text-transform:uppercase; }
   .meta{ font:500 12px/1.8 'Inter', sans-serif; letter-spacing:.08em; color:var(--muted); font-variant-numeric:tabular-nums; }
   .legend{ list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; justify-content:center; gap:6px 14px;
     font:12px/1.6 'Inter', sans-serif; color:var(--muted); }
@@ -117,8 +118,8 @@ async function start(){
 
   song = OC.expand(compact);
   $('song').hidden = false;
-  $('title').textContent = OC.chordName(song.barInfo[0].chord);
-  $('meta').textContent = `${song.bars}마디 · ${OC.BPM} BPM · ${OC.fmt(song.length)}`;
+  $('title').textContent = OC.titleFor(code);
+  $('meta').textContent = `${OC.chordName(song.barInfo[0].chord)} · ${song.bars}마디 · ${OC.BPM} BPM · ${OC.fmt(song.length)}`;
   const counts = {};
   for (const n of song.notes) if (n.src) counts[n.src] = (counts[n.src] || 0) + 1;
   $('legend').innerHTML = OC.ORDER.filter(k => counts[k]).map(k =>
