@@ -340,7 +340,8 @@
     -webkit-tap-highlight-color:transparent;
   }
   .chord-btn.is-shown{ display:block; }
-  .chord-btn svg{ display:block; width:100%; height:100%; overflow:visible; }
+  .chord-btn .shadow{ display:block; width:100%; height:100%; }
+  .chord-btn img{ display:block; width:100%; height:100%; user-select:none; -webkit-user-drag:none; }
   .chord-btn .disc{
     transform-origin:50% 50%;
     /* 33⅓ rpm, stepped like everything else on the page */
@@ -416,34 +417,9 @@
   </div>
 
   <a class="chord-btn" id="chordBtn" href="chord/index.html" aria-label="make chord — 모인 소리로 음악 만들기">
-    <svg viewBox="0 0 200 200" aria-hidden="true">
-      <defs>
-        <path id="chordRing" d="M100 100 m-29 0 a29 29 0 1 1 58 0 a29 29 0 1 1 -58 0"/>
-      </defs>
-      <g class="shadow">
-        <g class="disc">
-          <circle cx="100" cy="100" r="98" fill="#0c0c0c"/>
-          <!-- grooves -->
-          <g fill="none" stroke="rgba(232,226,212,0.09)" stroke-width="0.8">
-            <circle cx="100" cy="100" r="92"/><circle cx="100" cy="100" r="86"/>
-            <circle cx="100" cy="100" r="80"/><circle cx="100" cy="100" r="74"/>
-            <circle cx="100" cy="100" r="68"/><circle cx="100" cy="100" r="62"/>
-            <circle cx="100" cy="100" r="56"/><circle cx="100" cy="100" r="50"/>
-          </g>
-          <!-- sheen, so the turning reads -->
-          <path d="M100 100 L100 2 A98 98 0 0 1 169 31 Z" fill="rgba(232,226,212,0.06)"/>
-          <path d="M100 100 L100 198 A98 98 0 0 1 31 169 Z" fill="rgba(232,226,212,0.06)"/>
-          <!-- label -->
-          <circle cx="100" cy="100" r="42" fill="#b01d12"/>
-          <!-- stretched to exactly one lap of the ring, so the two halves
-               meet end to end whatever the font measures -->
-          <text font-family="Inter, sans-serif" font-size="8.6" font-weight="600" fill="#e8e2d4">
-            <textPath href="#chordRing" textLength="180" lengthAdjust="spacing">MAKE CHORD · MAKE CHORD · </textPath>
-          </text>
-          <circle cx="100" cy="100" r="3.2" fill="#0c0c0c"/>
-        </g>
-      </g>
-    </svg>
+    <!-- the record artwork (chord.png, cropped to its circle); it is the
+         part that turns, as the drawn disc did -->
+    <span class="shadow"><img class="disc" src="main-assets/chord-record.png" alt="" draggable="false"></span>
   </a>
 
 </div>
