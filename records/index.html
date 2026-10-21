@@ -4,188 +4,215 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Archive — Outer Chord</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&family=Playfair+Display:ital,wght@1,500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
 <style>
-  /* The song archive: every song make chord has made, newest first.
-     A first pass on the layout — a record half off the left edge with a
-     thin red ring for progress, a large title, and the track list — meant
-     to be replaced by a proper design later; the data and the playback
-     underneath do not change with it. */
-  :root{
-    --paper:#f1eee7; --ink:#141414; --muted:#8a877f; --line:rgba(20,20,20,.12); --red:#b01d12;
-    /* Hangul falls through to Pretendard rather than a system monospace */
-    --mono:'IBM Plex Mono', 'Pretendard Variable', Pretendard, ui-monospace, monospace;
-  }
+  @font-face{ font-family:'Nomark'; src:url('../fonts/nomark.otf') format('opentype'); font-display:swap; }
+  :root{ --red:#b01d12; --ink:#1e1e1e; }
   *,*::before,*::after{ box-sizing:border-box; }
-  html,body{ margin:0; height:100%; background:var(--paper); color:var(--ink);
-    font-family:'Pretendard Variable', Pretendard, 'Inter', sans-serif; -webkit-font-smoothing:antialiased; }
-  body{ overflow:hidden; }
+  html,body{ margin:0; width:100%; height:100%; overflow:hidden; background:#191818; color:var(--red);
+    font-family:'Pretendard Variable', Pretendard, sans-serif; -webkit-font-smoothing:antialiased; }
 
-  .app{ position:fixed; inset:0; display:grid; grid-template-columns: 46% 54%; }
+  /* The song archive, laid out on its 1920×1080 design sheet (음원화면 —
+     아카이브) and scaled to fit the window, as make chord is: the record
+     half off the left edge over the red panel, the selected song's title
+     large on the right, and every song made so far listed beneath it. The
+     backdrop and the red panel reach past the sheet to the window's edges. */
+  .stage{ position:fixed; left:0; top:0; width:1920px; height:1080px; transform-origin:0 0; z-index:2; }
+  .stage > *{ position:absolute; }
 
-  /* ---------- top bar ---------- */
-  .top{ position:fixed; left:0; right:0; top:0; z-index:5; height:64px;
-    display:flex; align-items:center; justify-content:space-between;
-    padding:0 clamp(20px, 3vw, 48px) 0 clamp(76px, 6.4vw, 110px); pointer-events:none; }
-  .brand{ font:600 13px/1 'Inter', sans-serif; letter-spacing:.06em; }
-  .nav{ display:flex; gap:22px; pointer-events:auto; }
-  .nav a{ font:500 11px/1 'Inter', sans-serif; letter-spacing:.12em; text-transform:uppercase; color:var(--ink); text-decoration:none; }
-  .nav a:hover{ color:var(--red); }
+  .panel{ left:0; top:0; width:484px; height:1080px; background:var(--red); }
+  /* the disc: centre (0, 522), radius 425 — over the panel */
+  #disc{ left:0; top:97px; width:425px; height:850px; z-index:2; }
 
-  /* ---------- the record ---------- */
-  .deck{ position:relative; overflow:hidden; }
-  .deck canvas{ position:absolute; left:0; top:0; width:100%; height:100%; display:block; }
-  .now{ position:absolute; left:50%; bottom:clamp(20px, 5vh, 48px); transform:translateX(-50%);
-    font:400 12px/1 var(--mono); color:var(--ink); white-space:nowrap; }
-  .now .total{ color:var(--muted); }
+  .chordbox{ right:1663px; top:205px; z-index:3; text-align:right; pointer-events:none; }
+  .chordbox .k{ font:700 32px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.01em; }
+  .chordbox .v{ margin-top:20px; margin-left:auto; width:max-content; white-space:nowrap;
+    font:400 92px/1 'Nomark', 'Pretendard Variable', serif; }
 
-  /* ---------- the list ---------- */
-  .side{ display:flex; flex-direction:column; min-height:0;
-    padding:clamp(80px, 12vh, 120px) clamp(20px, 3vw, 48px) clamp(20px, 4vh, 40px) clamp(10px, 2vw, 40px); }
-  .side h1{ margin:0; font:800 clamp(56px, 8.6vw, 150px)/.86 'Inter', sans-serif; letter-spacing:-.045em; text-transform:uppercase; }
-  .tags{ margin-top:14px; font:500 11px/1.6 var(--mono); letter-spacing:.06em; text-transform:uppercase; }
-  .label{ margin:clamp(18px, 4vh, 36px) 0 10px; font:600 13px/1 'Inter', sans-serif; letter-spacing:.04em; color:var(--red); text-transform:uppercase; }
-  .list{ list-style:none; margin:0; padding:0; overflow-y:auto; min-height:0; flex:1;
-    border-top:1px solid var(--line); scrollbar-width:thin; }
-  .row{ display:grid; grid-template-columns: 30px 44px 1fr auto; align-items:center; gap:14px;
-    padding:9px 4px; border-bottom:1px solid var(--line); cursor:pointer; }
-  .row:hover{ background:rgba(20,20,20,.035); }
+  .round{ z-index:3; width:85px; height:85px; margin:0; padding:0; border-radius:50%; cursor:pointer;
+    border:2px solid var(--red); background:var(--ink); color:var(--red);
+    display:grid; place-items:center; transition:background .15s steps(2,end), color .15s steps(2,end); }
+  .round svg{ width:36px; height:36px; fill:currentColor; }
+  .round:hover:not(:disabled), .round:focus-visible, .round.is-on{ background:var(--red); color:var(--ink); outline:none; }
+  .round:disabled{ opacity:.35; cursor:default; }
+  #playBtn{ left:266px; top:782.5px; }
+  #pauseBtn{ left:149px; top:865.5px; }
+
+  /* 174px Nomark at -20 tracking is the sheet's SONG / TITLE: caps 125
+     tall, baselines 185 apart, the first one at y=225 */
+  .title{ left:624px; top:71px; width:720px; margin:0; color:var(--red); letter-spacing:-.02em;
+    font:400 174px/185px 'Nomark', 'Pretendard Variable', serif; text-transform:uppercase; }
+  .title span{ display:block; width:max-content; white-space:nowrap; }
+
+  #logo{ left:1370px; top:148px; width:435px; height:auto; pointer-events:none; }
+
+  .recent{ left:670px; top:468px; font:500 26px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.03em; }
+  .count{ right:130px; top:478px; font:400 19px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.03em; }
+
+  .list{ left:668px; top:507px; width:1125px; height:430px; margin:0; padding:0; list-style:none;
+    border-top:2px solid var(--red); overflow-y:auto; scrollbar-width:none; }
+  .list::-webkit-scrollbar{ display:none; }
+  .row{ position:relative; height:77px; border-bottom:1px solid var(--red); cursor:pointer; }
+  .row:hover{ background:rgba(176,29,18,.07); }
+  .row.is-on{ background:rgba(176,29,18,.16); }
   .row:focus-visible{ outline:2px solid var(--red); outline-offset:-2px; }
-  .row .no{ font:400 11px/1 var(--mono); color:var(--muted); }
-  .row.is-on .no{ color:var(--red); }
-  .row canvas{ width:44px; height:44px; display:block; }
-  .row .t{ font:500 12.5px/1.3 var(--mono); letter-spacing:.02em; text-transform:uppercase; }
-  .row .s{ font:400 11px/1.4 var(--mono); color:var(--muted); text-transform:uppercase; }
-  .row .d{ font:400 12px/1 var(--mono); }
-  .controls{ display:flex; gap:10px; justify-content:flex-end; margin-top:14px; flex-wrap:wrap; }
-  .controls button{ appearance:none; border:1px solid var(--ink); background:transparent; color:var(--ink);
-    border-radius:999px; padding:11px 18px; cursor:pointer; font:500 11px/1 'Inter', sans-serif; letter-spacing:.14em; text-transform:uppercase; }
-  .controls button.primary{ background:var(--ink); color:var(--paper); }
-  .controls button:hover:not(:disabled), .controls button:focus-visible{ background:var(--red); border-color:var(--red); color:var(--paper); outline:none; }
-  .controls button:disabled{ opacity:.3; cursor:default; }
-  .empty{ padding:24px 4px; font-size:14px; line-height:1.8; color:var(--muted); }
+  .row > *{ position:absolute; }
+  .row .no{ left:29px; top:30px; font:700 19px/1 'Pretendard Variable', Pretendard, sans-serif; }
+  .row canvas{ left:100px; top:15px; width:46px; height:46px; }
+  .row .t{ left:189px; top:21px; font:700 21px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.02em; text-transform:uppercase; }
+  .row .s{ left:189px; top:44px; font:400 16px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.03em; white-space:nowrap; }
+  .row .d{ right:6px; top:28px; font:700 22px/1 'Pretendard Variable', Pretendard, sans-serif; font-variant-numeric:tabular-nums; }
+  .empty{ padding:28px 29px; font:400 19px/1.7 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.03em; }
 
-  @media (max-width: 820px){
-    body{ overflow:auto; }
-    /* the bar sits above the record instead of over it */
-    .top{ position:static; height:60px; padding-left:64px; }
-    .brand{ display:none; }
-    .app{ position:static; display:block; }
-    .deck{ height:96vw; }
-    .now{ bottom:6px; }
-    .side{ padding:20px 16px 28px; }
-    .list{ overflow:visible; }
-  }
+  .pill{ top:952px; height:58px; border:1.5px solid var(--red); border-radius:999px; background:transparent; color:var(--red);
+    cursor:pointer; font:500 21px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.03em;
+    transition:background .15s steps(2,end), color .15s steps(2,end); }
+  .pill:hover:not(:disabled), .pill:focus-visible{ background:var(--red); color:var(--ink); outline:none; }
+  .pill:disabled{ opacity:.35; cursor:default; }
+  #playPill{ left:1520px; width:102px; }
+  #qrBtn{ left:1642px; width:152px; }
 </style>
 </head>
 <body>
 
-<div class="top">
-  <div class="brand">OUTER CHORD</div>
-  <nav class="nav">
-    <a href="../index.html">Main</a>
-    <a href="../chord/index.html">Make Chord</a>
-  </nav>
-</div>
+<main class="stage" id="stage">
+  <div class="panel" id="panel"></div>
+  <canvas id="disc" aria-label="선택한 곡의 레코드"></canvas>
+  <div class="chordbox" aria-live="polite"><div class="k">CHORD</div><div class="v" id="chordName">—</div></div>
+  <button class="round" id="pauseBtn" type="button" aria-label="일시정지" disabled>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="5" width="4" height="14" rx=".5"/><rect x="14" y="5" width="4" height="14" rx=".5"/></svg>
+  </button>
+  <button class="round" id="playBtn" type="button" aria-label="재생" disabled>
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l13-7.5z"/></svg>
+  </button>
 
-<div class="app">
-  <section class="deck" aria-label="선택한 곡의 레코드">
-    <canvas id="deck"></canvas>
-    <div class="now"><span id="tNow">0:00</span> / <span class="total" id="tTotal">0:00</span></div>
-  </section>
+  <h1 class="title" id="title"><span>Outer</span><span>Chord</span></h1>
+  <img id="logo" src="../main-assets/logo.png" alt="OUTER CHORD — 성간 미아를 위한 불협화음">
 
-  <section class="side">
-    <h1>Outer<br>Chord</h1>
-    <div class="tags" id="tags">성간 미아를 위한 불협화음 — archive</div>
-    <div class="label">Recent</div>
-    <ul class="list" id="list" aria-label="만들어진 곡 목록"></ul>
-    <div class="controls">
-      <button type="button" class="primary" id="playBtn" disabled>▶ Play</button>
-      <button type="button" id="saveBtn" disabled>⤓ WAV</button>
-      <button type="button" id="qrBtn" disabled>▦ QR</button>
-    </div>
-  </section>
-</div>
+  <div class="recent">RECENT</div>
+  <div class="count" id="count"></div>
+  <ul class="list" id="list" aria-label="만들어진 곡 목록"></ul>
+
+  <button class="pill" id="playPill" type="button" disabled>재생</button>
+  <button class="pill" id="qrBtn" type="button" disabled>QR로 받기</button>
+</main>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
 <script src="../shared/outer-chord.js"></script>
+<script src="../shared/backdrop.js"></script>
 <script>
 (function(){
 'use strict';
 const OC = window.OuterChord;
 const $ = id => document.getElementById(id);
-const deck = $('deck'), g = deck.getContext('2d');
-let tracks = [], current = null, player = null, spin = 0, dpr = 1, W = 0, H = 0;
+const stage = $('stage'), panel = $('panel'), disc = $('disc'), g = disc.getContext('2d');
+const W = 1920, H = 1080;
+const C = { x: 0, y: 522 }, R = 425;               // the disc, on the sheet
+const BOX = { x: 0, y: 97, w: 425, h: 850 };       // the part of it on screen
+let S = 1, dpr = 1, tracks = [], current = null, player = null, spin = 0;
 
 const pad2 = n => String(n).padStart(2, '0');
-const when = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${d.getFullYear()}.${pad2(d.getMonth() + 1)}.${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+const when = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${d.getFullYear()} / ${pad2(d.getMonth() + 1)} / ${pad2(d.getDate())}  ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
 
-/* ---------------- the deck ---------------- */
-function resize(){
-  dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const r = deck.getBoundingClientRect(); W = r.width; H = r.height;
-  deck.width = Math.round(W * dpr); deck.height = Math.round(H * dpr);
+/* ---------------- the sheet ---------------- */
+function fit(){
+  const vw = innerWidth, vh = innerHeight;
+  S = Math.min(vw / W, vh / H);
+  const ox = (vw - W * S) / 2, oy = (vh - H * S) / 2;
+  stage.style.transform = `translate(${ox}px, ${oy}px) scale(${S})`;
+  panel.style.left = (-ox / S) + 'px';
+  panel.style.width = (484 + ox / S) + 'px';
+  panel.style.top = (-oy / S) + 'px';
+  panel.style.height = (H + 2 * oy / S) + 'px';
+  dpr = Math.min(devicePixelRatio || 1, 2);
+  disc.width = Math.round(BOX.w * S * dpr); disc.height = Math.round(BOX.h * S * dpr);
+  fitTitle();
 }
-function drawDeck(){
-  g.setTransform(dpr, 0, 0, dpr, 0, 0);
-  g.clearRect(0, 0, W, H);
-  // phone layout (the same breakpoint as the CSS): the whole disc, centred
-  const narrow = window.matchMedia('(max-width: 820px)').matches;
-  // on a phone the whole disc is shown, with room under it for the time
-  const R = narrow ? H * .38 : Math.min(H * .4, W * .78);
-  const cx = narrow ? W / 2 : 0, cy = H / 2;
-  const now = player && player.playing ? player.time() : -1;
+
+/* ---------------- the disc ---------------- */
+function drawDisc(){
+  const k = S * dpr;
+  g.setTransform(k, 0, 0, k, 0, 0);
+  g.clearRect(0, 0, BOX.w, BOX.h);
   const song = current && current.song;
-
-  // the thin red ring and its progress dot, a step outside the disc
-  const ringR = R * 1.08;
-  g.lineWidth = 1; g.strokeStyle = 'rgba(176,29,18,.55)';
-  g.beginPath(); g.arc(cx, cy, ringR, 0, Math.PI * 2); g.stroke();
-  const p = song && now >= 0 ? Math.min(1, now / song.length) : 0;
-  // the dot goes once round the ring — or, when only the right half of the
-  // disc is on screen, down the part of it in plain view, from upper right
-  // to lower right (clear of the corners and the back arrow)
-  const da = narrow ? -Math.PI / 2 + p * Math.PI * 2 : -Math.PI / 3 + p * Math.PI * 2 / 3;
-  g.fillStyle = '#f1eee7'; g.strokeStyle = '#b01d12'; g.lineWidth = 1.5;
-  g.beginPath(); g.arc(cx + Math.cos(da) * ringR, cy + Math.sin(da) * ringR, 6, 0, Math.PI * 2); g.fill(); g.stroke();
-  g.fillStyle = '#b01d12';
-  g.beginPath(); g.arc(cx + Math.cos(da) * ringR, cy + Math.sin(da) * ringR, 2.4, 0, Math.PI * 2); g.fill();
-
-  OC.drawRecord(g, cx, cy, R, song, now, {
-    spin, tonearm: false, restAlpha: .5,
-    labelText: current ? ['№ ' + pad2(current.no), OC.fmt(song.length)] : ['OUTER', 'CHORD'],
+  const now = player && (player.playing || player.time() > 0) ? player.time() : -1;
+  // the needle's place is the disc's right-hand edge (three o'clock): what is
+  // sounding turns round to there
+  OC.drawRecord(g, C.x - BOX.x, C.y - BOX.y, R, song, now, {
+    spin, tonearm: false, restAlpha: .42, needleAngle: 0,
+    vinyl: '#1e1e1e', labelColor: '#b01d12', ringColor: '#313131',
+    labelR: 118 / R, ringR: 143 / R, labelText: false, spindle: false,
   });
-
-  $('tNow').textContent = OC.fmt(Math.max(0, now));
-  $('tTotal').textContent = song ? OC.fmt(song.length) : '0:00';
 }
+
+function setChord(){
+  if (!current) return;
+  const song = current.song, t = player ? player.time() : 0;
+  const b = OC.clamp(Math.floor(t / OC.BAR), 0, song.bars - 1);
+  const text = song.barInfo[b].chord.map(pc => OC.NAMES[pc]).join(' ');
+  const el = $('chordName');
+  if (el.textContent === text) return;
+  el.textContent = text;
+  // right-aligned at x=257 as on the sheet; a long one is set smaller
+  let size = 92; el.style.fontSize = size + 'px';
+  while (size > 44 && el.scrollWidth > 235) { size -= 4; el.style.fontSize = size + 'px'; }
+}
+
+// Nomark at the sheet's size, brought down until the longest word fits
+function fitTitle(){
+  const el = $('title');
+  let size = 174;
+  const set = s => { el.style.fontSize = s + 'px'; el.style.lineHeight = Math.round(s * 185 / 174) + 'px'; };
+  set(size);
+  const widest = () => Math.max(...[...el.children].map(s => s.scrollWidth));
+  while (size > 80 && widest() > 720) { size -= 4; set(size); }
+}
+function setTitle(text){
+  $('title').innerHTML = text.split(' ').map(w => `<span>${w}</span>`).join('');
+  $('title').setAttribute('aria-label', '곡 제목: ' + text);
+  fitTitle();
+}
+
 let next = 0;
 function loop(ts){
   if (ts >= next) {
     next = ts + (1000 / 24) * (1 + (Math.random() * 2 - 1) * .15);
     if (!(player && player.playing)) spin += .006;
-    drawDeck();
+    setChord();
+    drawDisc();
   }
   requestAnimationFrame(loop);
 }
 
 /* ---------------- the list ---------------- */
 function cover(canvas, song){
-  const s = 44, r = Math.min(window.devicePixelRatio || 1, 2);
+  const s = 46, r = Math.min(devicePixelRatio || 1, 2);
   canvas.width = canvas.height = s * r;
   const c = canvas.getContext('2d'); c.setTransform(r, 0, 0, r, 0, 0);
-  OC.drawRecord(c, s / 2, s / 2, s / 2, song, -1, { labelText: false, restAlpha: .9 });
+  // the sheet's little record: dark, with a red centre
+  c.beginPath(); c.arc(s / 2, s / 2, s / 2, 0, Math.PI * 2); c.fillStyle = '#1e1e1e'; c.fill();
+  OC.drawRecord(c, s / 2, s / 2, s / 2, song, -1, { vinyl: '#1e1e1e', labelText: false, restAlpha: .55,
+    labelColor: '#b01d12', labelR: .36, spindle: false });
+}
+
+function setButtons(){
+  const on = player && player.playing;
+  $('playBtn').classList.toggle('is-on', !!on);
+  $('pauseBtn').classList.toggle('is-on', !on && player && player.time() > 0);
+  $('playPill').textContent = on ? '정지' : '재생';
 }
 
 function select(t){
-  if (player) player.stop();
+  if (player) player.halt();
   current = t;
-  player = OC.player(t.song, () => { $('playBtn').textContent = '▶ Play'; });
-  $('playBtn').textContent = '▶ Play';
+  player = OC.player(t.song, setButtons);
+  setTitle(t.title || OC.titleFor(t.code));
+  $('chordName').textContent = '';
+  setChord();
   document.querySelectorAll('.row').forEach(r => r.classList.toggle('is-on', r.dataset.id === t.id));
-  ['playBtn', 'saveBtn', 'qrBtn'].forEach(id => ($(id).disabled = false));
+  ['playBtn', 'pauseBtn', 'playPill', 'qrBtn'].forEach(id => ($(id).disabled = false));
+  setButtons();
 }
 
 async function load(){
@@ -195,11 +222,11 @@ async function load(){
   const ready = [];
   for (let i = 0; i < songs.length; i++) {
     const s = songs[i];
-    try { const compact = await OC.decode(s.code); ready.push({ ...s, no: i + 1, song: OC.expand(compact) }); }
+    try { ready.push({ ...s, no: i + 1, song: OC.expand(await OC.decode(s.code)) }); }
     catch (err) { /* an unreadable entry is skipped, not fatal */ }
   }
   tracks = ready.reverse();
-  $('tags').textContent = `성간 미아를 위한 불협화음 — ${tracks.length} tracks · ${from === 'server' ? '전시 서버' : '이 브라우저'}`;
+  $('count').textContent = `${tracks.length} TRACKS / ${from === 'server' ? '전시 서버' : '이 브라우저'}`;
 
   const list = $('list');
   if (!tracks.length) { list.innerHTML = '<li class="empty">아직 만들어진 곡이 없습니다.<br>작품을 체험하고 make chord에서 곡을 만들어 보세요.</li>'; return; }
@@ -208,40 +235,41 @@ async function load(){
     const li = document.createElement('li');
     li.className = 'row'; li.tabIndex = 0; li.dataset.id = t.id;
     li.innerHTML = `<span class="no">${pad2(t.no)}</span><canvas aria-hidden="true"></canvas>
-      <span><div class="t">${t.title || OC.titleFor(t.code)}</div>
-      <div class="s">${OC.chordName(t.song.barInfo[0].chord)} · ${when(t.createdAt)}${t.sessions ? ` · 체험 ${t.sessions}회` : ''}</div></span>
+      <span class="t">${t.title || OC.titleFor(t.code)}</span>
+      <span class="s">${when(t.createdAt)}${t.sessions ? `  체험 ${t.sessions}회` : ''}</span>
       <span class="d">${OC.fmt(t.song.length)}</span>`;
     cover(li.querySelector('canvas'), t.song);
     li.addEventListener('click', () => select(t));
-    li.addEventListener('dblclick', () => { select(t); play(); });
-    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(t); play(); } });
+    li.addEventListener('dblclick', () => { select(t); player.play(); setButtons(); });
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); select(t); player.play(); setButtons(); } });
     list.appendChild(li);
   }
   select(tracks[0]);
 }
 
-function play(){ if (!player) return; player.play(); $('playBtn').textContent = '■ Stop'; }
-$('playBtn').addEventListener('click', () => {
+$('playBtn').addEventListener('click', () => { if (player && !player.playing) player.play(); setButtons(); });
+$('pauseBtn').addEventListener('click', () => { if (player) player.pause(); setButtons(); });
+$('playPill').addEventListener('click', () => {
   if (!player) return;
-  if (player.playing) { player.stop(); $('playBtn').textContent = '▶ Play'; } else play();
-});
-$('saveBtn').addEventListener('click', async () => {
-  if (!current) return;
-  const b = $('saveBtn'); b.disabled = true; const l = b.textContent; b.textContent = '…';
-  try { OC.download(await OC.renderWav(current.song), `outer-chord-${pad2(current.no)}.wav`); } catch (err) { alert('파일을 만들지 못했습니다: ' + err.message); }
-  b.textContent = l; b.disabled = false;
+  if (player.playing) player.stop(); else player.play();
+  setButtons();
 });
 $('qrBtn').addEventListener('click', () => {
   if (!current) return;
   OC.showQR(current.code, { title: current.title || OC.titleFor(current.code) });
 });
 
-window.addEventListener('resize', resize);
-resize();
+// a handle for checking the page from the console
+window.__records = { drawDisc, setChord, get player() { return player; }, get current() { return current; } };
+
+XGBackdrop.mount({ root: '../', logo: $('logo') });
+addEventListener('resize', fit);
+fit();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitTitle);
 requestAnimationFrame(loop);
 load();
 })();
 </script>
-<script src="../shared/back.js" data-visit="0" data-color="#141414"></script>
+<script src="../shared/back.js" data-visit="0" data-color="#1e1e1e"></script>
 </body>
 </html>

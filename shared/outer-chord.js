@@ -510,40 +510,94 @@
     return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="crispEdges"><rect width="${size}" height="${size}" fill="${opt.light || '#fff'}"/><path d="${d}" fill="${opt.dark || '#000'}"/></svg>`;
   }
 
-  /* A sheet over the page with the code to scan. */
+  /* The code to scan, as a record sleeve: a red sleeve holding the title,
+     the QR code and a line on what to do, with the record sliding halfway
+     out of it to the right. Laid out on the 1920×1080 design (the sleeve
+     609×773 in the middle, the disc r=262 centred on its right edge) and
+     scaled to the window. Fonts: Nomark for the title, Pretendard for the
+     rest — a page that has not declared Nomark gets it from here. */
+  let qrStyled = false;
+  function qrStyle() {
+    if (qrStyled) return;
+    qrStyled = true;
+    const css = document.createElement('style');
+    css.textContent = `
+      @font-face{ font-family:'Nomark'; src:url('${siteRootAssets()}fonts/nomark.otf') format('opentype'); font-display:swap; }
+      .oc-qr{ position:fixed; inset:0; z-index:2147482000; display:grid; place-items:center;
+        background:rgba(12,11,11,.78); opacity:0; transition:opacity .25s steps(4,end); }
+      .oc-qr.is-open{ opacity:1; }
+      .oc-qr[hidden]{ display:none; }
+      .oc-qr__stage{ position:relative; width:609px; height:773px; transform-origin:50% 50%; }
+      .oc-qr__disc{ position:absolute; left:347px; top:124.5px; width:524px; height:524px; z-index:1;
+        transform:translateX(-262px); transition:transform 1.15s cubic-bezier(.2,.75,.25,1) .3s; }
+      .oc-qr.is-open .oc-qr__disc{ transform:translateX(0); }
+      .oc-qr__spin{ width:100%; height:100%; border-radius:50%; position:relative;
+        background:repeating-radial-gradient(circle at 50% 50%, #1e1e1e 0 3px, #222 3px 4px);
+        animation:oc-qr-spin 1.8s steps(24,end) infinite; animation-play-state:paused; }
+      .oc-qr.is-open .oc-qr__spin{ animation-play-state:running; }
+      .oc-qr__spin::before{ content:''; position:absolute; left:50%; top:50%; width:180px; height:180px; margin:-90px 0 0 -90px;
+        border-radius:50%; background:#313131; }
+      .oc-qr__spin::after{ content:''; position:absolute; left:50%; top:50%; width:140px; height:140px; margin:-70px 0 0 -70px;
+        border-radius:50%; background:#b01d12; }
+      @keyframes oc-qr-spin{ to{ transform:rotate(360deg); } }
+      .oc-qr__sleeve{ position:absolute; inset:0; z-index:2; background:#b01d12;
+        display:flex; flex-direction:column; align-items:center; }
+      .oc-qr__title{ margin:22px 0 0; height:58px; max-width:540px; color:#1e1e1e; white-space:nowrap;
+        font:400 46px/58px 'Nomark', 'Pretendard Variable', serif; letter-spacing:-.035em; text-transform:uppercase; }
+      .oc-qr__code{ margin-top:11px; width:482px; height:483px; background:#fff; padding:14px; box-sizing:border-box; }
+      .oc-qr__code svg{ display:block; width:100%; height:100%; }
+      .oc-qr__text{ margin-top:30px; color:#1e1e1e; text-align:center;
+        font:400 19px/30px 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.05em; }
+      .oc-qr__close{ margin-top:13px; width:143px; height:54px; border:0; border-radius:999px; cursor:pointer;
+        background:#1e1e1e; color:#b01d12; font:500 19px/1 'Pretendard Variable', Pretendard, sans-serif; letter-spacing:-.03em;
+        transition:background .15s steps(2,end), color .15s steps(2,end); }
+      .oc-qr__close:hover, .oc-qr__close:focus-visible{ background:#e8e2d4; color:#1e1e1e; outline:none; }
+      @media (prefers-reduced-motion: reduce){ .oc-qr__disc{ transition:none; } .oc-qr__spin{ animation:none; } }`;
+    document.head.appendChild(css);
+  }
+  // fonts/ sits at the site root; pages live one folder down
+  function siteRootAssets() { return /\/(chord|records)\/[^/]*$/.test(location.pathname) ? '../' : ''; }
+
   function showQR(code, meta) {
+    qrStyle();
     let sheet = document.getElementById('ocQR');
     if (!sheet) {
-      const css = document.createElement('style');
-      css.textContent = `
-        .oc-qr{position:fixed;inset:0;z-index:2147482000;display:grid;place-items:center;background:rgba(10,10,10,.82);
-          font-family:'Pretendard Variable',Pretendard,'Inter',sans-serif;color:#e8e2d4;padding:16px}
-        .oc-qr[hidden]{display:none}
-        .oc-qr__card{background:#e8e2d4;color:#111;border-radius:6px;padding:clamp(18px,3vw,32px);width:min(92vw,560px);
-          display:grid;gap:14px;justify-items:center;text-align:center}
-        .oc-qr__code{width:min(78vw,72vh,460px);aspect-ratio:1;background:#fff}
-        .oc-qr__code svg{display:block;width:100%;height:100%}
-        .oc-qr__title{font:italic 500 22px/1.2 'Playfair Display',serif}
-        .oc-qr__text{font-size:14px;line-height:1.7;color:#333}
-        .oc-qr__close{appearance:none;border:1px solid #111;background:transparent;color:#111;border-radius:999px;
-          padding:11px 22px;font:500 12px/1 'Inter',sans-serif;letter-spacing:.16em;cursor:pointer}
-        .oc-qr__close:hover,.oc-qr__close:focus-visible{background:#111;color:#e8e2d4;outline:none}`;
-      document.head.appendChild(css);
       sheet = document.createElement('div');
       sheet.id = 'ocQR'; sheet.className = 'oc-qr'; sheet.hidden = true;
       sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
-      sheet.innerHTML = `<div class="oc-qr__card"><div class="oc-qr__title"></div><div class="oc-qr__code"></div>
-        <div class="oc-qr__text">휴대폰 카메라로 찍으면<br>이 곡을 휴대폰에서 듣고 내려받을 수 있어요.</div>
-        <button type="button" class="oc-qr__close">닫기</button></div>`;
+      sheet.innerHTML = `<div class="oc-qr__stage">
+          <div class="oc-qr__disc" aria-hidden="true"><div class="oc-qr__spin"></div></div>
+          <div class="oc-qr__sleeve">
+            <h2 class="oc-qr__title"></h2>
+            <div class="oc-qr__code"></div>
+            <div class="oc-qr__text">휴대폰 카메라로 찍으면<br>이 곡을 휴대폰에서 듣고 내려받을 수 있어요.</div>
+            <button type="button" class="oc-qr__close">닫기</button>
+          </div>
+        </div>`;
       document.body.appendChild(sheet);
-      const close = () => { sheet.hidden = true; };
+      const stage = sheet.querySelector('.oc-qr__stage');
+      // the sleeve stays in the middle; the disc needs room to its right
+      const fit = () => { stage.style.transform = `scale(${Math.min(1, innerWidth / 1250, innerHeight / 860)})`; };
+      fit(); addEventListener('resize', fit);
+      const close = () => {
+        sheet.classList.remove('is-open');
+        setTimeout(() => { if (!sheet.classList.contains('is-open')) sheet.hidden = true; }, 260);
+      };
       sheet.querySelector('.oc-qr__close').addEventListener('click', close);
       sheet.addEventListener('click', e => { if (e.target === sheet) close(); });
-      document.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && !sheet.hidden) close(); });
     }
-    sheet.querySelector('.oc-qr__title').textContent = (meta && meta.title) || 'Outer Chord';
-    sheet.querySelector('.oc-qr__code').innerHTML = qrSvg(code);
+    const title = sheet.querySelector('.oc-qr__title');
+    title.textContent = (meta && meta.title) || 'Outer Chord';
+    // a long title is set smaller rather than run past the sleeve
+    title.style.fontSize = '46px';
+    sheet.querySelector('.oc-qr__code').innerHTML = qrSvg(code, { margin: 1 });
     sheet.hidden = false;
+    for (let s = 46; s > 24 && title.scrollWidth > 540; s -= 2) title.style.fontSize = s + 'px';
+    // restart the slide each time it opens
+    sheet.classList.remove('is-open');
+    void sheet.offsetWidth;
+    sheet.classList.add('is-open');
     sheet.querySelector('.oc-qr__close').focus();
   }
 

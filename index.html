@@ -73,19 +73,18 @@
      the word inside keeps its full width and slides out from under the
      right edge.
 
-     The numbers are measured off the file, which is 1400x265. The O's
-     right side doubles as the U's left stem — the U's thick stroke runs
-     down the O's lower right and its hairline bowl out to x≈294 — so no
+     The numbers are measured off the file, which is 1600x294 (the 10-21
+     wordmark). The O's right side doubles as the U's left stem, so no
      straight window can hold the O without a piece of the U. While the
      mark is alone it is drawn from logo-mark.png instead: the same sheet
-     with only the compass O left on it (the right half rebuilt from the
-     left half's own outline, so the U's stem comes away and the needle tip
-     stays). The full sheet takes over as the word starts to slide out. The
-     window opens at 232/1400, just past the needle's tip at x=228; the
-     wordmark band ends at y=216 and
-     the Korean line starts at y=224, which is where the two are split onto
-     their own elements. The window is centred, so the lockup is centred at
-     both ends and the mark drifts left as the word arrives. */
+     with only the compass O on it — the U's stem and bowl taken off, and
+     the lower-right frame, which the stem covers in the wordmark, redrawn
+     from the upper-right one. The full sheet takes over as the word starts
+     to slide out. The window opens at 252/1600, just past the needle's
+     tip; the wordmark band ends at y=248 and the Korean line starts at
+     y=250, which is where the two are split onto their own elements. The
+     window is centred, so the lockup is centred at both ends and the mark
+     drifts left as the word arrives. */
   .openlogo{
     /* tied to the shorter side of the window, the same measure the ring
        uses, so the gap between the word and the cards holds at any shape.
@@ -101,19 +100,19 @@
   }
   .openlogo__line{
     overflow:hidden;
-    width: calc(var(--logo-w) * 232 / 1400);
+    width: calc(var(--logo-w) * 252 / 1600);
   }
   .openlogo__word{
     width: var(--logo-w);
-    height: calc(var(--logo-w) * 216 / 1400);
+    height: calc(var(--logo-w) * 248 / 1600);
     background: url('main-assets/logo-mark.png') 0 0 / 100% auto no-repeat;
   }
   .openlogo__word.is-word{ background-image: url('main-assets/logo.png'); }
   .openlogo__sub{
     width: var(--logo-w);
-    height: calc(var(--logo-w) * 41 / 1400);
-    margin-top: calc(var(--logo-w) * 8 / 1400);
-    background: url('main-assets/logo.png') 0 calc(var(--logo-w) * -224 / 1400) / 100% auto no-repeat;
+    height: calc(var(--logo-w) * 44 / 1600);
+    margin-top: calc(var(--logo-w) * 2 / 1600);
+    background: url('main-assets/logo.png') 0 calc(var(--logo-w) * -250 / 1600) / 100% auto no-repeat;
     opacity:0;                 /* it joins once the word is all the way out */
   }
 
@@ -496,21 +495,79 @@
        Pages) or opened straight off the disk — a bare "d/" only gets a
        directory listing under file://. `bg` falls back to a gradient for
        pieces without a still of their own. */
+    /* body: one entry per line as it is set; '' is an empty line between
+       stanzas. desc is the subtitle in the index's top-right corner only. */
     { id:1, title:"Cattle Mutilation", desc:"캐틀 뮤틸레이션", url:"cattlemutilation/index.html", bg:"url('cattlemutilation/thumb.webp') center/cover no-repeat, #111",
-      panel:"#031927", ink:"#bb1100", body:["캐틀 뮤틸레이션은 소 등 가축이 도륙되어","내부의 피와 내장만 사라진 채 죽은 현상을 일컫는다","외계로의 납치 그리고","육신으로부터의 탈출!"] },
+      panel:"#031927", ink:"#bb1100", body:[
+        "캐틀 뮤틸레이션은 소 등 가축이 도륙되어",
+        "내부의 피와 내장만 사라진 채 죽은 현상을 일컫는다.",
+        "몸을 버리는 행위를 절대적인 타자에게 맡기고자 하는 욕구.",
+        "외계로의 납치 그리고",
+        "육신으로부터의 탈출!",
+        "",
+        "달에 갈 생각은 아니었어."] },
     { id:2, title:"The Sound of Not the Earth", desc:"Voyager Golden Record", url:"e/index.html", bg:"url('e/thumb.webp') center/cover no-repeat, #111",
-      panel:"#bc2d0b", ink:"#cfccc2", body:["보이저 골든 레코드는 보이저 탐사선 두 대에 실린 축음기 음반으로","외계 생명체에게 인류의 메세지를 전달하고자","지구의 모습과 소리를 담은 LP 디스크이다.","언젠가 돌아갈 외계로 단 하나 메세지를 전한다면","어떤 음을 넣을 것인가…"] },
+      panel:"#bc2d0b", ink:"#cfccc2", body:[
+        "보이저 골든 레코드는 보이저 탐사선 두 대에 실린 축음기 음반으로",
+        "외계 생명체에게 인류의 메세지를 전달하고자",
+        "지구의 모습과 소리를 담은 LP 디스크이다.",
+        "",
+        "언젠가 돌아갈 외계로 단 하나 메세지를 전한다면",
+        "당신은",
+        "어떤 음을 넣을 것인가."] },
     // panel / ink taken off each thumbnail: its ground, and its brightest line colour
-    { id:3, title:"Noctiluca",         desc:"Bio-Matrix",       url:"d/index.html",      bg:"url('d/thumb.webp') center/cover no-repeat, #0f1112",
-      panel:"#0f1112", ink:"#36eaf7", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
-    { id:4, title:"I'm Not an Alien",  desc:"Y2K",              url:"imnota/index.html", bg:"url('imnota/thumb.webp') center/cover no-repeat, #2b2323",
-      panel:"#2b2323", ink:"#c7b9e6", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
-    { id:5, title:"Tenshi no Tsubasa", desc:"천사의 날개",       url:"tenshi/index.html", bg:"url('tenshi/thumb.webp') center/cover no-repeat, #111",
-      panel:"#0000ff", ink:"#f0f0f0", body:["외계인들이 손에 쥔 무기는 보통 예술이다","외롭거나 괴로운 자들의 영역…","이것만은 영원히 당신의 편"] },
-    { id:6, title:"PASSACAGLIA",      desc:"Score Brush",      url:"c3/index.html",     bg:"url('c3/thumb.webp') center/cover no-repeat, #d9e7fb",
-      panel:"#d9e7fb", ink:"#341c91", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
+    { id:3, title:"05-Noctiluca",      desc:"Bio-Matrix",       url:"d/index.html",      bg:"url('d/thumb.webp') center/cover no-repeat, #0f1112",
+      panel:"#0f1112", ink:"#36eaf7", body:[
+        "05-Noctiluca는 홍해파리의 특징인",
+        "윤회 혹은 영생으로부터 모티브를 얻어 제작된",
+        "해파리를 움직여볼 수 있는 인터랙티브 웹으로",
+        "캠을 통해 손 모양을 인식하여 움직일 수 있다.",
+        "",
+        "영생하는; 윤회하는 것을 \u201C인간같다\u201D 라고 부를 것인가",
+        "\u201C외계의 것처럼 보인다\u201D 라고 부를 것인가.",
+        "당신의 인간성의 기준은 어디로부터 오고",
+        "타자화는 어디로 향하는가."] },
+    { id:4, title:"I'm Not an Alien",  desc:"aREenCAPCHA",      url:"imnota/index.html", bg:"url('imnota/thumb.webp') center/cover no-repeat, #2b2323",
+      panel:"#2b2323", ink:"#c7b9e6", body:[
+        "컴퓨터 봇에 의한 스팸, 해킹 등을 방지하고",
+        "인간임을 인증하기 위한 테스트인",
+        "RECAPCHA의 '로봇이 아닙니다' 테스트 과정에서",
+        "모티브를 얻어 제작된 미니게임 형식의 인터랙티브 웹이다.",
+        "",
+        "인간을 규정하는 기준은 무엇인가.",
+        "온기일지 숨일지 중력일지 스스로의 정의일지.",
+        "당신은 무엇이기를 선택하는가."] },
+    { id:5, title:"Tenshi no Tsubasa", desc:"천사의 날개/천사에게는 날개가 없다", url:"tenshi/index.html", bg:"url('tenshi/thumb.webp') center/cover no-repeat, #111",
+      panel:"#0000ff", ink:"#f0f0f0", body:[
+        "스스로를 외계인이라 칭하던 A양은 곧잘 천사를 찾았다.",
+        "천사..., 하늘로 올라가는 뒷모습. 다함께 천국으로 가는 길.",
+        "영적인 무언가와 사신 같은 천사를.",
+        "",
+        "천사는 아가미로 숨을 쉰다. 눈도 코도 입도 존재하지 않아 질식하는 천사.",
+        "천사를 어항에 넣어주자.",
+        "천사는 아무 말도 하지 않는다. 천사는 다만 자애롭게 날개를 허우적거릴 뿐이다.",
+        "어항은 영원하지 않다."] },
+    { id:6, title:"PASSACAGLIA",       desc:"scorespace",       url:"c3/index.html",     bg:"url('c3/thumb.webp') center/cover no-repeat, #d9e7fb",
+      panel:"#d9e7fb", ink:"#341c91", body:[
+        "사방으로 된 공간에 갇혀 있기도 하고,",
+        "우주 속에서 부유하고 있기도 하다.",
+        "뒤에서는 별들이 떨어질 것처럼 빛난다.",
+        "",
+        "외계인들이 손에 쥔 무기는 보통 예술이다",
+        "외롭거나 괴로운 자들의 영역.",
+        "이것만은 영원히 당신의 편."] },
     { id:7, title:"OUTERCHORD",        desc:"성간 미아를 위한 불협화음", url:"outerchord/index.html", bg:"url('outerchord/thumb.webp') center/cover no-repeat, #181819",
-      panel:"#181819", ink:"#b01e12", body:["설명 문단 첫 번째 줄이 여기에 들어갑니다","두 번째 줄","세 번째 줄"] },
+      panel:"#181819", ink:"#b01e12", body:[
+        "보이저 골든 레코드가",
+        "지구의 소리를 싣고 우주로 떠났듯이, 본 프로젝트는",
+        "'내가 꼭 이 행성에 불시착한 외계인 같다'고",
+        "고백하는 이들의 소리를",
+        "외계로 띄워 보낼 하나의 레코드로 엮고자 한다.",
+        "",
+        "이질감과 외로움을 느끼는 개개인의 소리를",
+        "아트웍으로 기록 및 재구성한 웹에서",
+        "서로 다른 음악들이 쌓여",
+        "마침내 불협화음처럼 얽힌 하나의 앨범, OUTER CHORD로 완성된다."] },
   ];
 
   /* ---------------- Sketched outline ----------------
@@ -696,6 +753,48 @@
   const DETAIL_CARD_SIZE = 502 / 1920;        // 26.15vw
   const DETAIL_CARD_X = (224 + 502 / 2) / 1920;   // centre, 24.75%
   const DETAIL_CARD_Y = (287 + 502 / 2) / 1080;   // centre, 49.86%
+
+  /* ---------------- Detail view: the description's size ----------------
+     One size for every piece, set by the one that needs the most room: the
+     text runs from where it always started down to the foot of the artwork
+     beside it, and across the column it always had, without a line
+     wrapping. It is worked out for the window it is in, so the block keeps
+     that same place at any size. '' in a body is an empty line. */
+  const BODY_LEADING = 1.75;       // line height, as a multiple of the size
+  const BODY_MAX = 1.25;           // vw — never larger than the panel's 24pt
+
+  const bodyHTML = lines => (lines || [])
+    .map(line => line ? `<span>${line}</span>` : '<span aria-hidden="true">&nbsp;</span>').join('');
+
+  function fitDetailBody(){
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const top = vh * parseFloat(getComputedStyle(detailEl).getPropertyValue('--body-top')) / 100;
+    const cardBottom = DETAIL_CARD_Y * vh + DETAIL_CARD_SIZE * vw / 2;
+    const availH = cardBottom - top;
+    const availW = detailBody.getBoundingClientRect().width || vw * .4248;
+
+    // measured once at 100px: the longest line and the most lines
+    const probe = document.createElement('div');
+    probe.className = 'detail__body';
+    probe.style.cssText = 'position:fixed; left:-99999px; top:0; right:auto; font-size:100px; visibility:hidden; white-space:nowrap;';
+    document.body.appendChild(probe);
+    let widest = 0, rows = 0;
+    for (const p of projects) {
+      probe.innerHTML = bodyHTML(p.body);
+      for (const s of probe.children) widest = Math.max(widest, s.getBoundingClientRect().width);
+      rows = Math.max(rows, (p.body || []).length);
+    }
+    probe.remove();
+
+    const byHeight = availH / (rows * BODY_LEADING);
+    const byWidth = availW / (widest / 100);
+    const size = Math.max(9, Math.min(byHeight, byWidth, vw * BODY_MAX / 100));
+    detailBody.style.fontSize = size.toFixed(2) + 'px';
+    detailBody.style.lineHeight = BODY_LEADING;
+  }
+  window.addEventListener('resize', fitDetailBody);
+  (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(fitDetailBody);
+  fitDetailBody();
 
   const cardEls = projects.map((p, i) => {
     const card = document.createElement('div');
@@ -1364,8 +1463,7 @@
     detailFill.style.background = project.panel;
     detailContent.style.color = project.ink;
     detailTitle.textContent = project.title;
-    detailBody.innerHTML = (project.body || [])
-      .map(line => `<span>${line}</span>`).join('');
+    detailBody.innerHTML = bodyHTML(project.body);
     const bodyLines = [...detailBody.children];
 
     // the card has to ride above the field it lands on
